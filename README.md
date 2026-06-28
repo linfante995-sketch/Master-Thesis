@@ -195,7 +195,7 @@ python analysis.py
 python analysis.py
 ```
 
-The script prints progress to the console. All 31 outputs are written to `outputs/`
+The script prints progress to the console. All 33 outputs are written to `outputs/`
 inside the base folder. A full run takes approximately 2–4 minutes.
 
 ---
