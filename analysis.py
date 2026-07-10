@@ -52,6 +52,7 @@ import warnings
 from pathlib import Path
 
 import pandas as pd
+import numpy as np   # runtime fix (Jul 2026): Section 8's top-level RETAINED_EARNINGS uses np.nan
 import matplotlib
 matplotlib.use('Agg')  # No GUI needed; we write PNGs to disk.
 import matplotlib.pyplot as plt
@@ -70,7 +71,11 @@ import os as _os
 if _os.environ.get('THESIS_DIR'):
     BASE_DIR = Path(_os.environ['THESIS_DIR'])
 
-EXCEL_PATH = BASE_DIR / 'USDC_USDT_USDP_Basel3_Master_v5.xlsx'
+EXCEL_PATH = BASE_DIR / 'USDC_USDT_USDP_Basel3_Master_v8.xlsx'
+for _fb in ('USDC_USDT_USDP_Basel3_Master_v7.xlsx',
+            'USDC_USDT_USDP_Basel3_Master_v5.xlsx'):
+    if not EXCEL_PATH.exists():
+        EXCEL_PATH = BASE_DIR / _fb
 TB3MS_PATH = BASE_DIR / 'TB3MS.csv'
 MSPD_PATH  = BASE_DIR / 'MSPD_SumSecty_20010131_20260531.csv'
 OUT_DIR    = BASE_DIR / 'outputs'
@@ -2970,6 +2975,345 @@ def print_event_summary(events):
 # MAIN ENTRY POINT
 # ==============================================================================
 
+# ==============================================================================
+# SECTION 8: Supervisor additions — bank benchmark, BTC/gold price shocks,
+#            retained-earnings attribution, joint (triple-negative) stress
+# ------------------------------------------------------------------------------
+# METHODOLOGY
+#   BANK BENCHMARK (RQ1 extension). Two US Basel III banks bracket the banking
+#   spectrum on the same 14-quarter window: BNY Mellon (custody model, the
+#   closest real-bank analogue to a narrow bank; historically a USDC reserve
+#   custodian) and JPMorgan (universal G-SIB extreme). Standardized CET1
+#   headline ratios per quarter, hardcoded from each quarter's earnings release
+#   (SEC 8-K / IR PDF); later capital tables show final revisions of +-0.1pp.
+#
+#   PRICE SHOCKS (RQ2/RQ3 extension). Instantaneous L = notional x |dp| on
+#   USDT's disclosed BTC and gold lines, single and combined, each quarter,
+#   against reserve equity (= total assets - circulation). Pre-2023 zeros are
+#   a DISCLOSURE artifact (separate CRR categories only from Q1 2023).
+#   USDC/USDP hold zero of both -> structural immunity is itself a result.
+#
+#   RETAINED EARNINGS (RQ1 extension; Acharya, Gujral, Kulkarni & Shin 2022,
+#   J. Financial Crises 4(2); orig. NBER WP 16896). Implied distribution_t =
+#   E_{t-1} + Profit_t - E_t; retention = dE / Profit. Reserve level only.
+#
+#   JOINT STRESS (scenario formation). Monthly BTC return, gold return and
+#   d(3M yield). Gold: long spliced series (LBMA/datahub pre-2019, Macrotrends
+#   2019+, Gold_Monthly_Long sheet); gold price fixed pre-1971 (Bretton
+#   Woods), so correlation analysis uses the post-Aug-1971 free-float era.
+#   "Triple-negative" = BTC<0, gold<0, dy>0 (bill prices down). The worst
+#   observed episodes are replayed on the latest USDT book (rate leg at 90d
+#   WAM on the sovereign notional).
+# ==============================================================================
+
+BANK_CET1 = {  # Quarter -> (JPM_CET1_pct, JPM_RWA_bn, BNY_CET1_pct)
+    '2022-Q3': (12.5, 1682, 10.0), '2022-Q4': (13.2, 1700, 11.2),
+    '2023-Q1': (13.8, 1700, 11.0), '2023-Q2': (13.8, 1700, 11.1),
+    '2023-Q3': (14.3, 1700, 11.4), '2023-Q4': (15.0, 1700, 11.6),
+    '2024-Q1': (15.0, 1700, 10.8), '2024-Q2': (15.3, 1743, 11.4),
+    '2024-Q3': (15.3, 1783, 11.9), '2024-Q4': (15.7, 1800, 11.2),
+    '2025-Q1': (15.4, 1815, 11.5), '2025-Q2': (15.0, 1886, 11.5),
+    '2025-Q3': (14.8, 1935, 11.7), '2025-Q4': (14.5, 2000, 11.9),
+}  # Sources: JPM & BNY quarterly earnings releases 3Q22-4Q25 (SEC 8-K / IR)
+
+PRICE_SHOCKS = [0.20, 0.30, 0.40, 0.50]
+
+RETAINED_EARNINGS = [
+    # (issuer, year, E_open_m, profit_m, E_close_m) — reserve level, $m
+    # Tether: BDO reports + tether.io attestation announcements (v6 fill);
+    # Circle: S-1 audited FY2024 / 10-Qs (reserve income swept to parent).
+    ('USDT', 'FY2023',  960.0,  6200.0, 5203.0),
+    ('USDT', 'FY2024', 5203.0, 12139.0, 7087.0),
+    ('USDT', 'FY2025', 7087.0, 10106.0, 6338.0),
+    ('USDC', 'FY2024',  191.2,  1661.1,  191.2),
+    ('USDC', 'FY2025',  191.2, np.nan,   155.3),
+]
+
+
+def compute_bank_benchmark(cap_ts):
+    """Bank CET1 vs issuer reserve-level RW-equity ratio, quarterly panel."""
+    rows = []
+    for q, (jc, jr, bc) in sorted(BANK_CET1.items()):
+        rec = {'Quarter': q, 'JPM_CET1_pct': jc, 'JPM_RWA_bn': jr,
+               'BNY_CET1_pct': bc}
+        sub = cap_ts[cap_ts['Quarter'] == q]
+        for iss in ['USDC', 'USDT', 'USDP']:
+            v = sub[sub['Issuer'] == iss]['RW_Equity_Ratio_pct']
+            rec[f'{iss}_RWeq_pct'] = round(float(v.iloc[0]), 2) if len(v) else np.nan
+        rows.append(rec)
+    return pd.DataFrame(rows)
+
+
+def make_bank_benchmark_figure(bb):
+    fig, ax = plt.subplots(figsize=(11, 5.5))
+    x = range(len(bb))
+    ax.plot(x, bb['JPM_CET1_pct'], marker='o', lw=2, label='JPMorgan CET1 (Std)')
+    ax.plot(x, bb['BNY_CET1_pct'], marker='s', lw=2, label='BNY Mellon CET1')
+    for iss, mk in [('USDC', '^'), ('USDT', 'v'), ('USDP', 'd')]:
+        ax.plot(x, bb[f'{iss}_RWeq_pct'], marker=mk, lw=1.4, ls='--',
+                label=f'{iss} reserve RW-equity')
+    ax.axhline(7, color='crimson', lw=1, ls=':', label='7% analogical minimum')
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(bb['Quarter'], rotation=45, ha='right')
+    ax.set_ylabel('% of RWA')
+    ax.set_title('Basel III bank CET1 vs stablecoin reserve-level RW-equity, '
+                 'Q3 2022 - Q4 2025')
+    ax.legend(fontsize=8, ncol=2)
+    fig.tight_layout()
+    return fig
+
+
+def compute_price_shock_panel(panel):
+    """USDT BTC/gold shock grid across the analytical window."""
+    rows = []
+    for _, r in panel.iterrows():
+        q = r['Quarter']
+        btc  = float(r.get('USDT_BTC', 0) or 0) / 1e9
+        gold = float(r.get('USDT_Gold', 0) or 0) / 1e9
+        eq   = (float(r['USDT_Total_Assets']) - float(r['USDT_Circulation'])) / 1e9
+        for s in PRICE_SHOCKS:
+            lb, lg = btc * s, gold * s
+            rows.append({
+                'Quarter': q, 'Shock_pct': int(s * 100),
+                'BTC_Notional_bn': round(btc, 3),
+                'Gold_Notional_bn': round(gold, 3),
+                'Reserve_Equity_bn': round(eq, 3),
+                'Loss_BTC_only_bn': round(lb, 3),
+                'Buffer_after_BTC_bn': round(eq - lb, 3),
+                'Loss_Gold_only_bn': round(lg, 3),
+                'Buffer_after_Gold_bn': round(eq - lg, 3),
+                'Loss_Combined_bn': round(lb + lg, 3),
+                'Buffer_after_Combined_bn': round(eq - lb - lg, 3),
+                'Breakeven_Combined_pct': (round(eq / (btc + gold) * 100, 1)
+                                           if btc + gold > 0 else np.nan)})
+    return pd.DataFrame(rows)
+
+
+def make_price_shock_figure(sp):
+    """Left: break-even trajectory (falling = deteriorating resilience).
+       Right: latest-quarter buffer after each shock size."""
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    be = sp.drop_duplicates('Quarter').dropna(subset=['Breakeven_Combined_pct'])
+    axes[0].plot(be['Quarter'], be['Breakeven_Combined_pct'],
+                 marker='o', color='darkred')
+    axes[0].set_title('USDT combined BTC+gold break-even shock')
+    axes[0].set_ylabel('buffer-exhausting |shock| (%)')
+    axes[0].tick_params(axis='x', rotation=45)
+    axes[0].invert_yaxis()
+    last = sp[sp['Quarter'] == sp['Quarter'].max()]
+    w = 0.25
+    x = np.arange(len(last))
+    axes[1].bar(x - w, last['Buffer_after_BTC_bn'], w, label='after BTC-only')
+    axes[1].bar(x,     last['Buffer_after_Gold_bn'], w, label='after gold-only')
+    axes[1].bar(x + w, last['Buffer_after_Combined_bn'], w, label='after combined')
+    axes[1].axhline(0, color='k', lw=0.8)
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels([f"-{s}%" for s in last['Shock_pct']])
+    axes[1].set_title(f"Buffer after shock, {sp['Quarter'].max()} ($bn)")
+    axes[1].legend(fontsize=8)
+    fig.tight_layout()
+    return fig
+
+
+def compute_retention_attribution():
+    rows = []
+    for iss, yr, e0, p, e1 in RETAINED_EARNINGS:
+        ok = not any(np.isnan([e0, p, e1]))
+        rows.append({'Issuer': iss, 'Year': yr, 'Equity_Open_m': e0,
+                     'Profit_m': p, 'Equity_Close_m': e1,
+                     'Implied_Distribution_m': round(e0 + p - e1, 0) if ok else np.nan,
+                     'Retention_pct': round((e1 - e0) / p * 100, 1) if ok and p else np.nan})
+    return pd.DataFrame(rows)
+
+
+def load_gold_long():
+    """Long gold series: Gold_Monthly_Long (v7) if present, else Gold_Monthly."""
+    import openpyxl
+    wb = openpyxl.load_workbook(EXCEL_PATH, read_only=True, data_only=True)
+    sheet = 'Gold_Monthly_Long' if 'Gold_Monthly_Long' in wb.sheetnames else 'Gold_Monthly'
+    rows = list(wb[sheet].iter_rows(values_only=True))
+    if sheet == 'Gold_Monthly_Long':
+        hdr_i = next(i for i, r in enumerate(rows) if r[0] == 'Date')
+        df = pd.DataFrame(rows[hdr_i + 1:], columns=[str(c) for c in rows[hdr_i]])
+        s = pd.Series(df['Gold_USD_oz'].astype(float).values,
+                      index=pd.to_datetime(df['Date']) + pd.offsets.MonthEnd(0))
+    else:
+        df = pd.DataFrame(rows[1:], columns=[str(c) for c in rows[0]])
+        s = pd.Series(df['Gold_Price_USD_per_oz'].astype(float).values,
+                      index=pd.to_datetime(df['Date']) + pd.offsets.MonthEnd(0))
+    return s.sort_index()
+
+
+def compute_joint_stress(panel, sov_wam_days=90):
+    """Correlations, triple-negative scan (BTC era), 1971+ gold-rates dual
+    scan, and replay of worst episodes on the latest USDT book."""
+    gold = load_gold_long()
+    btc = pd.read_csv(BASE_DIR / 'btcusdmax.csv')
+    btc['date'] = pd.to_datetime(btc['snapped_at'].str[:10])
+    btc = btc.set_index('date')['price'].resample('ME').last()
+    tb = pd.read_csv(BASE_DIR / 'TB3MS.csv')
+    tb['date'] = pd.to_datetime(tb['observation_date']) + pd.offsets.MonthEnd(0)
+    tb = tb.set_index('date')['TB3MS'].astype(float)
+
+    # BTC-era monthly panel
+    dm = pd.DataFrame({'btc': btc.pct_change(), 'gold': gold.pct_change(),
+                       'dy_bp': tb.diff() * 100}).dropna()
+    # quarterly
+    dq = pd.DataFrame({'btc': btc.resample('QE').last().pct_change(),
+                       'gold': gold.resample('QE').last().pct_change(),
+                       'dy_bp': tb.resample('QE').last().diff() * 100}).dropna()
+    dq['triple_negative'] = (dq.btc < 0) & (dq.gold < 0) & (dq.dy_bp > 0)
+
+    # 1971+ free-float gold-rates panel (pre-BTC context)
+    g71 = pd.DataFrame({'gold': gold.resample('QE').last().pct_change(),
+                        'dy_bp': tb.resample('QE').last().diff() * 100}).dropna()
+    g71 = g71[g71.index >= '1971-12-31']
+    dual = g71[(g71.gold < -0.05) & (g71.dy_bp > 50)].sort_values('gold')
+
+    # replay on latest USDT book
+    last = panel.iloc[-1]
+    btc_n  = float(last.get('USDT_BTC', 0) or 0) / 1e9
+    gold_n = float(last.get('USDT_Gold', 0) or 0) / 1e9
+    eq     = (float(last['USDT_Total_Assets']) - float(last['USDT_Circulation'])) / 1e9
+    sov    = (float(last['USDT_Tbills_Direct']) + float(last['USDT_Total_Repos'])) / 1e9
+    wamf   = sov_wam_days / 365
+
+    def replay(btc_r, gold_r, dy_bp):
+        return (btc_n * max(-btc_r, 0) + gold_n * max(-gold_r, 0)
+                + sov * wamf * max(dy_bp, 0) / 10000)
+
+    replays = []
+    for d, r in dq[dq['triple_negative']].sort_values('btc').iterrows():
+        L = replay(r.btc, r.gold, r.dy_bp)
+        replays.append({'Episode': f'{d.year}-Q{d.quarter}', 'Type': 'triple (BTC era)',
+                        'BTC_ret': round(r.btc, 3), 'Gold_ret': round(r.gold, 3),
+                        'dy_bp': round(r.dy_bp, 0), 'Loss_bn': round(L, 2),
+                        'Buffer_after_bn': round(eq - L, 2)})
+    for d, r in dual.head(6).iterrows():
+        L = replay(0, r.gold, r.dy_bp)  # no BTC leg pre-2013
+        replays.append({'Episode': f'{d.year}-Q{d.quarter}', 'Type': 'dual (gold+rates)',
+                        'BTC_ret': np.nan, 'Gold_ret': round(r.gold, 3),
+                        'dy_bp': round(r.dy_bp, 0), 'Loss_bn': round(L, 2),
+                        'Buffer_after_bn': round(eq - L, 2)})
+    replays = pd.DataFrame(replays)
+
+    summary = {
+        'sample': f'{dm.index.min().date()} -> {dm.index.max().date()} ({len(dm)}m)',
+        'corr_btc_gold': round(dm.btc.corr(dm.gold), 3),
+        'corr_btc_dy': round(dm.btc.corr(dm.dy_bp), 3),
+        'corr_gold_dy': round(dm.gold.corr(dm.dy_bp), 3),
+        'corr_gold_dy_1971plus': round(
+            gold.pct_change().to_frame('g').join(tb.diff().mul(100).rename('dy'))
+                .dropna().loc['1971-08-31':].corr().loc['g', 'dy'], 3),
+        'triple_months': int(((dm.btc < 0) & (dm.gold < 0) & (dm.dy_bp > 0)).sum()),
+        'n_months': len(dm),
+        'triple_quarters': int(dq['triple_negative'].sum()),
+        'n_quarters': len(dq),
+        'reserve_equity_bn': round(eq, 2)}
+    return dm, dq, replays, summary
+
+
+def make_joint_stress_figure(dm, dq):
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].scatter(dm['dy_bp'], dm['gold'] * 100, s=18, alpha=0.7)
+    axes[0].axhline(0, lw=0.6, color='k')
+    axes[0].axvline(0, lw=0.6, color='k')
+    axes[0].set_xlabel('d 3M yield (bp/month)')
+    axes[0].set_ylabel('gold return (%)')
+    axes[0].set_title(f"Gold vs rates, monthly "
+                      f"(corr {dm.gold.corr(dm.dy_bp):+.2f})")
+    colors = np.where(dq['triple_negative'], 'crimson', 'grey')
+    axes[1].bar(range(len(dq)), dq['btc'] * 100, color=colors)
+    step = max(1, len(dq) // 18)
+    ticks = list(range(0, len(dq), step))
+    axes[1].set_xticks(ticks)
+    axes[1].set_xticklabels([f'{dq.index[i].year}-Q{dq.index[i].quarter}'
+                             for i in ticks], rotation=60, fontsize=6)
+    axes[1].set_ylabel('BTC quarterly return (%)')
+    axes[1].set_title('Triple-negative quarters highlighted (BTC↓, gold↓, rates↑)')
+    fig.tight_layout()
+    return fig
+
+
+
+
+
+def compute_combined_stress_timeseries(panel, rate_shocks_bp=(200, 400),
+                                       sov_wam_days=90,
+                                       replay=(0.573, 0.069, 105)):
+    """Combined BTC+gold+rate stress for EVERY panel quarter (USDT).
+
+    Grid: price shocks (PRICE_SHOCKS) x rate shocks (bp), plus a per-quarter
+    replay of the worst observed triple-negative episode (2022-Q2 defaults:
+    BTC -57.3%, gold -6.9%, +105bp). USDC/USDP hold no BTC/gold, so their
+    combined stress reduces to the RQ2 rate leg and is not duplicated here.
+    Pre-2023 caveat: BTC/gold zeros are a disclosure artifact (separate CRR
+    categories only from Q1 2023), so early-quarter losses are UNDERSTATED.
+    """
+    wamf = sov_wam_days / 365
+    rows = []
+    for _, r in panel.iterrows():
+        q = r['Quarter']
+        btc  = float(r.get('USDT_BTC', 0) or 0) / 1e9
+        gold = float(r.get('USDT_Gold', 0) or 0) / 1e9
+        eq   = (float(r['USDT_Total_Assets']) - float(r['USDT_Circulation'])) / 1e9
+        sov  = (float(r.get('USDT_Tbills_Direct', 0) or 0)
+                + float(r.get('USDT_Total_Repos', 0) or 0)) / 1e9
+        rep_loss = (btc * replay[0] + gold * replay[1]
+                    + sov * wamf * replay[2] / 10000)
+        for s in PRICE_SHOCKS:
+            for dy in rate_shocks_bp:
+                lb, lg = btc * s, gold * s
+                lr = sov * wamf * dy / 10000
+                lt = lb + lg + lr
+                rows.append({
+                    'Quarter': q, 'Price_Shock_pct': int(s * 100),
+                    'Rate_Shock_bp': dy,
+                    'BTC_Notional_bn': round(btc, 3),
+                    'Gold_Notional_bn': round(gold, 3),
+                    'Sov_Notional_bn': round(sov, 3),
+                    'Reserve_Equity_bn': round(eq, 3),
+                    'Loss_BTC_bn': round(lb, 3), 'Loss_Gold_bn': round(lg, 3),
+                    'Loss_Rate_bn': round(lr, 3), 'Loss_Total_bn': round(lt, 3),
+                    'Buffer_after_bn': round(eq - lt, 3),
+                    'Survives': bool(eq - lt > 0),
+                    'Replay_2022Q2_Loss_bn': round(rep_loss, 3),
+                    'Replay_2022Q2_Buffer_after_bn': round(eq - rep_loss, 3)})
+    return pd.DataFrame(rows)
+
+
+def make_combined_stress_figure(cs):
+    """Left: buffer after each price shock at +400bp, per quarter.
+       Right: buffer after the 2022-Q2 replay vs unstressed equity."""
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 5))
+    qs = cs['Quarter'].drop_duplicates().tolist()
+    x = range(len(qs))
+    for s in sorted(cs['Price_Shock_pct'].unique()):
+        sub = cs[(cs['Price_Shock_pct'] == s) & (cs['Rate_Shock_bp'] == 400)]
+        axes[0].plot(x, sub['Buffer_after_bn'], marker='o', ms=3,
+                     label=f'-{s}% prices +400bp')
+    axes[0].axhline(0, color='k', lw=1)
+    axes[0].set_xticks(list(x))
+    axes[0].set_xticklabels(qs, rotation=45, ha='right', fontsize=7)
+    axes[0].set_ylabel('buffer after shock ($bn)')
+    axes[0].set_title('USDT combined stress timeline (price + rate legs)')
+    axes[0].legend(fontsize=7)
+    rep = cs.drop_duplicates('Quarter')
+    axes[1].plot(x, rep['Reserve_Equity_bn'], marker='o', ms=3,
+                 label='reserve equity (unstressed)')
+    axes[1].plot(x, rep['Replay_2022Q2_Buffer_after_bn'], marker='s', ms=3,
+                 color='darkred', label='buffer after 2022-Q2 replay')
+    axes[1].axhline(0, color='k', lw=1)
+    axes[1].set_xticks(list(x))
+    axes[1].set_xticklabels(qs, rotation=45, ha='right', fontsize=7)
+    axes[1].set_title('Worst observed episode replayed on each quarter')
+    axes[1].legend(fontsize=8)
+    fig.tight_layout()
+    return fig
+
+
+# ==============================================================================
+
 def main():
     print("=" * 70)
     print("Thesis analysis script")
@@ -3333,6 +3677,73 @@ def main():
     plt.close(fig_ev)
     print(f"  Saved {ev_fig_path.name}")
 
+    # ---- SECTION 8: Supervisor additions ----
+    print("\n" + "-" * 70)
+    print("Section 8: bank benchmark, price shocks, retention, joint stress")
+    print("-" * 70)
+    bb = compute_bank_benchmark(cap_ts)
+    bb.to_csv(OUT_DIR / 'bank_benchmark.csv', index=False)
+    fig_bb = make_bank_benchmark_figure(bb)
+    fig_bb.savefig(OUT_DIR / 'fig_bank_benchmark.png', dpi=130, bbox_inches='tight')
+    plt.close(fig_bb)
+    print(f"  Saved bank_benchmark.csv + figure "
+          f"(JPM {bb['JPM_CET1_pct'].iloc[-1]}%, BNY {bb['BNY_CET1_pct'].iloc[-1]}% "
+          f"vs USDT {bb['USDT_RWeq_pct'].iloc[-1]}% in {bb['Quarter'].iloc[-1]})")
+
+    sp = compute_price_shock_panel(panel)
+    sp.to_csv(OUT_DIR / 'btc_gold_shock_panel.csv', index=False)
+    fig_sp = make_price_shock_figure(sp)
+    fig_sp.savefig(OUT_DIR / 'fig_btc_gold_shocks.png', dpi=130, bbox_inches='tight')
+    plt.close(fig_sp)
+    be_last = sp.dropna(subset=['Breakeven_Combined_pct'])
+    if len(be_last):
+        print(f"  Saved btc_gold_shock_panel.csv + figure "
+              f"(combined break-even {be_last['Breakeven_Combined_pct'].iloc[-1]}% "
+              f"in {be_last['Quarter'].iloc[-1]})")
+
+    ra = compute_retention_attribution()
+    ra.to_csv(OUT_DIR / 'retained_earnings_attribution.csv', index=False)
+    print("  Saved retained_earnings_attribution.csv")
+    for _, r in ra.iterrows():
+        if not np.isnan(r['Retention_pct']):
+            print(f"    {r['Issuer']} {r['Year']}: retention {r['Retention_pct']}% "
+                  f"(distributed ${r['Implied_Distribution_m']:,.0f}m)")
+
+    dm, dq, replays, jsum = compute_joint_stress(panel)
+    dm.round(5).to_csv(OUT_DIR / 'btc_gold_rates_monthly.csv')
+    dq.round(5).to_csv(OUT_DIR / 'btc_gold_rates_quarterly.csv')
+    replays.to_csv(OUT_DIR / 'joint_stress_replays.csv', index=False)
+    fig_js = make_joint_stress_figure(dm, dq)
+    fig_js.savefig(OUT_DIR / 'fig_joint_stress.png', dpi=130, bbox_inches='tight')
+    plt.close(fig_js)
+    print(f"  Joint stress ({jsum['sample']}): corr BTCxGold {jsum['corr_btc_gold']}, "
+          f"GoldxDy {jsum['corr_gold_dy']}; triple-negative "
+          f"{jsum['triple_months']}/{jsum['n_months']} months, "
+          f"{jsum['triple_quarters']}/{jsum['n_quarters']} quarters")
+    if len(replays):
+        w = replays.sort_values('Buffer_after_bn').iloc[0]
+        print(f"    Worst replay {w['Episode']} ({w['Type']}): loss "
+              f"${w['Loss_bn']}bn -> buffer after ${w['Buffer_after_bn']}bn "
+              f"of ${jsum['reserve_equity_bn']}bn")
+
+    cs = compute_combined_stress_timeseries(panel)
+    cs.to_csv(OUT_DIR / 'combined_stress_timeseries.csv', index=False)
+    fig_cs = make_combined_stress_figure(cs)
+    fig_cs.savefig(OUT_DIR / 'fig_combined_stress_timeline.png', dpi=130,
+                   bbox_inches='tight')
+    plt.close(fig_cs)
+    fails = cs[~cs['Survives']]
+    frontier = (fails.sort_values(['Price_Shock_pct', 'Rate_Shock_bp'])
+                     .groupby('Quarter').first())
+    print(f"  Saved combined_stress_timeseries.csv ({len(cs)} rows) + figure")
+    for q in cs['Quarter'].drop_duplicates():
+        if q in frontier.index:
+            f = frontier.loc[q]
+            print(f"    {q}: mildest failing scenario -{f['Price_Shock_pct']}% "
+                  f"/ +{f['Rate_Shock_bp']}bp (buffer {f['Buffer_after_bn']})")
+        else:
+            print(f"    {q}: survives all scenarios up to -50% / +400bp")
+
     # Headline through-line
     usdp_s = scorecard[scorecard['Issuer'] == 'USDP'].iloc[0]
     usdc_s = scorecard[scorecard['Issuer'] == 'USDC'].iloc[0]
@@ -3348,3 +3759,326 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+# ==============================================================================
+# SECTION 9: Publication figures for the written thesis (Chapters 4-7)
+# ------------------------------------------------------------------------------
+# WHAT THIS SECTION PRODUCES
+#   outputs/thesis_figures/
+#     fig_4_1_rwa_density.png         -> Section 4.2,   after Table 4.2
+#     fig_4_2_bank_corridor.png       -> Section 4.3.2, after Table 4.4
+#     fig_5_1_rate_shock_history.png  -> Section 5.2,   after Table 5.1
+#     fig_6_1_lcr_40pct.png           -> Section 6.3.1, after Table 6.2
+#     fig_6_2_combined_stress.png     -> Section 6.3.4, after Table 6.4
+#     fig_6_3_tbill_share.png         -> Section 6.2   (footprint paragraph)
+#     fig_7_1_classification.png      -> Section 7.3.2, after Table 7.3
+#
+# DESIGN RULES (locked)
+#   - Reads ONLY locked outputs: the Stablecoin Reserve Panel (the master
+#     Excel at EXCEL_PATH, cited in the thesis as Infante, 2026) and the CSVs
+#     written by Sections 3-8 into OUT_DIR. This section recomputes NOTHING.
+#     The only arithmetic is ratio-of-locked-values (RWA / total assets) and
+#     the trailing-12-month difference of raw TB3MS -- the documented episode-
+#     detection input of Section 4; the episodes themselves are read from
+#     rate_shock_episodes.csv.
+#   - Two short series are transcribed from locked, thesis-printed tables
+#     rather than re-derived: the USDC opaque-treatment density (Table 4.2)
+#     and the Q4-2025 mildest-failing-cell label (Table 6.4).
+#   - Publication style (serif, 300 dpi, no in-image titles; captions live in
+#     the thesis) is applied via rc_context so the working-figure style of
+#     Section 0 is untouched.
+#   - Missing optional inputs skip the single affected figure with a message;
+#     they never raise. Break-even values are printed for verification against
+#     Table 6.4.
+# ==============================================================================
+
+THESIS_FIG_DIR = OUT_DIR / 'thesis_figures'
+
+_TF_C = {'USDC': '#1f4e8c', 'USDT': '#1a8f6d', 'USDP': '#c17817',
+         'red': '#b3392f', 'gray': '#5a5f66', 'band': '#e8eaed'}
+_TF_STYLE = {
+    'font.family': 'serif', 'font.size': 9, 'axes.labelsize': 9.5,
+    'axes.spines.top': False, 'axes.spines.right': False,
+    'axes.grid': True, 'grid.color': '#d9dce1', 'grid.linewidth': 0.5,
+    'legend.frameon': False, 'legend.fontsize': 8.5,
+    'savefig.dpi': 300, 'savefig.bbox': 'tight', 'figure.facecolor': 'white',
+}
+_TF_QUARTERS = [f'{y}-Q{q}' for y in (2022, 2023, 2024, 2025)
+                for q in (1, 2, 3, 4)][2:]          # 2022-Q3 .. 2025-Q4
+
+# Locked transcriptions (see DESIGN RULES above).
+_TF_USDC_OPAQUE_DENSITY = [3.88, 15.29] + [20.0] * 12        # Table 4.2
+_TF_MILDEST_FAIL_LABEL = '\u221225%; mildest grid cell\n(\u221220% / +400 bp) fails'  # Table 6.4
+
+
+def _tf_qticks(ax, quarters):
+    ax.set_xticks(range(len(quarters)))
+    ax.set_xticklabels([f"Q{q.split('-Q')[1]}\n{q[:4]}" for q in quarters],
+                       fontsize=7.8)
+    ax.set_xlim(-0.5, len(quarters) - 0.5)
+
+
+def _tf_series(df, issuer, col):
+    return (df[df['Issuer'] == issuer].set_index('Quarter')[col]
+            .reindex(_TF_QUARTERS).values.astype(float))
+
+
+def _tf_fig_4_1(cb, mtm, usdp_rwa):
+    fig, ax = plt.subplots(figsize=(7.3, 3.9))
+    for iss in ('USDT', 'USDP', 'USDC'):
+        if iss == 'USDP':
+            d = (usdp_rwa.set_index('Quarter')['USDP_RWA_Ratio']
+                 .reindex(_TF_QUARTERS) * 100).values
+        else:
+            d = (_tf_series(cb, iss, 'RWA_bn')
+                 / _tf_series(mtm, iss, 'Total_Assets_bn') * 100)
+        lbl = iss + (' (look-through)' if iss == 'USDC' else '')
+        ax.plot(range(14), d, marker='o', ms=3.5, lw=1.6, color=_TF_C[iss], label=lbl)
+    ax.plot(range(14), _TF_USDC_OPAQUE_DENSITY, ls=':', lw=1.4,
+            color=_TF_C['USDC'], alpha=0.75, label='USDC opaque (sensitivity)')
+    ax.annotate('', xy=(9, 20), xytext=(9, 3.3),
+                arrowprops=dict(arrowstyle='<->', color=_TF_C['USDC'], lw=1))
+    ax.text(9.25, 11.3, 'look-through\npremium \u2248 17 pp', fontsize=8, color=_TF_C['USDC'])
+    ax.set_ylabel('RWA density (RWA / total reserve assets, %)')
+    ax.set_ylim(0, 92); _tf_qticks(ax, _TF_QUARTERS)
+    ax.legend(loc='upper left', ncol=2)
+    fig.savefig(THESIS_FIG_DIR / 'fig_4_1_rwa_density.png'); plt.close(fig)
+
+
+def _tf_fig_4_2(bank):
+    fig, ax = plt.subplots(figsize=(7.3, 3.9))
+    x = range(14)
+    ax.fill_between(x, bank['BNY'].astype(float), bank['JPM'].astype(float),
+                    color=_TF_C['band'], zorder=0,
+                    label='US bank CET1 corridor (BNY\u2013JPM)')
+    for b in ('JPM', 'BNY'):
+        ax.plot(x, bank[b].astype(float), color='#8a8f98', lw=1.1)
+        ax.text(13.15, float(bank[b].iloc[-1]), b, fontsize=8,
+                color='#6b7078', va='center')
+    for iss in ('USDC', 'USDT', 'USDP'):
+        ax.plot(x, bank[iss].astype(float), marker='o', ms=3.5, lw=1.6,
+                color=_TF_C[iss], label=f'{iss} reserve RW-equity')
+    ax.axhline(7, ls='--', lw=1.1, color=_TF_C['red'])
+    ax.text(0.05, 7.4, '7% Basel-analogous minimum', fontsize=8, color=_TF_C['red'])
+    ax.annotate('USDP Q2 2023: 50.2%', xy=(3, 27.6), xytext=(4.1, 25.5), fontsize=8,
+                color=_TF_C['USDP'],
+                arrowprops=dict(arrowstyle='->', color=_TF_C['USDP'], lw=0.9))
+    ax.set_ylabel('Equity / risk-weighted assets (%)')
+    ax.set_ylim(0, 28.5); _tf_qticks(ax, _TF_QUARTERS)
+    ax.legend(loc='upper right', ncol=2)
+    fig.savefig(THESIS_FIG_DIR / 'fig_4_2_bank_corridor.png'); plt.close(fig)
+
+
+def _tf_fig_5_1(tb_series, eps):
+    d12 = (tb_series.diff(12) * 100).dropna()   # bp; documented detection input
+    fig, ax = plt.subplots(figsize=(7.3, 3.7))
+    ax.plot(d12.index, d12.values, lw=0.8, color='#4a6b8a')
+    ax.axhline(400, ls='--', lw=1.1, color=_TF_C['red'])
+    ax.axhline(0, lw=0.6, color='#9aa0a6')
+    ax.text(pd.Timestamp('1935-06-01'), 425, '+400 bp threshold',
+            fontsize=8, color=_TF_C['red'])
+    labels = {1973: '1973\n+465', 1980: '1980\n+572',
+              1981: '1981\n+772', 2022: '2022\u201323\n+439'}
+    for _, r in eps.iterrows():
+        ax.axvspan(r['start'] - pd.DateOffset(months=2),
+                   r['end'] + pd.DateOffset(months=2),
+                   color=_TF_C['red'], alpha=0.15, lw=0)
+        ax.annotate(labels[r['start'].year], xy=(r['peak_date'], r['peak_bp']),
+                    xytext=(r['peak_date'], r['peak_bp'] + 60),
+                    fontsize=7.8, ha='center', color='#7a2620')
+    ax.axvspan(pd.Timestamp('2022-07-01'), pd.Timestamp('2026-01-01'),
+               color='#1f4e8c', alpha=0.07, lw=0)
+    ax.text(pd.Timestamp('2013-01-01'), -540, 'panel window \u2192',
+            fontsize=8, color='#1f4e8c')
+    ax.set_ylabel('Trailing-12-month change in 3-month\nT-bill yield (basis points)')
+    ax.set_ylim(-620, 900)
+    fig.savefig(THESIS_FIG_DIR / 'fig_5_1_rate_shock_history.png'); plt.close(fig)
+
+
+def _tf_fig_6_1(lcr):
+    l40 = lcr[lcr['Outflow_pct'] == 40].set_index('Quarter').reindex(_TF_QUARTERS)
+    fig, ax = plt.subplots(figsize=(7.3, 3.9))
+    for iss in ('USDC', 'USDT', 'USDP'):
+        lbl = iss + (' (look-through)' if iss == 'USDC' else '')
+        ax.plot(range(14), l40[f'{iss}_LCR_plain'], marker='o', ms=3.5, lw=1.6,
+                color=_TF_C[iss], label=lbl)
+    ax.axhline(100, ls='--', lw=1.1, color=_TF_C['red'])
+    ax.text(13.35, 106, 'pass\n(100%)', fontsize=8, color=_TF_C['red'],
+            va='bottom', ha='center')
+    ax.annotate('Q4 2022: 59% \u2014\nfund-transition artifact', xy=(1, 59.1),
+                xytext=(1.7, 22), fontsize=8, color=_TF_C['USDC'],
+                arrowprops=dict(arrowstyle='->', color=_TF_C['USDC'], lw=0.9))
+    ax.annotate('USDP wind-down:\nsovereign book runs off to cash', xy=(8, 2),
+                xytext=(6.1, 118), fontsize=8, color=_TF_C['USDP'],
+                arrowprops=dict(arrowstyle='->', color=_TF_C['USDP'], lw=0.9))
+    ax.set_ylabel('LCR at 40% redemption run (%)')
+    ax.set_ylim(0, 248); _tf_qticks(ax, _TF_QUARTERS)
+    ax.legend(loc='lower left', bbox_to_anchor=(0.02, 0.02))
+    fig.savefig(THESIS_FIG_DIR / 'fig_6_1_lcr_40pct.png'); plt.close(fig)
+
+
+def _tf_fig_6_2(bg):
+    q12 = _TF_QUARTERS[2:]                       # 2023-Q1 onward (first disclosure)
+    sleeve = (bg['BTC'] + bg['Gold']).reindex(q12).astype(float)
+    buf = bg['Equity'].reindex(q12).astype(float)
+    brk = (bg['Breakeven'].reindex(q12).astype(float) * 100)
+    fig, ax = plt.subplots(figsize=(7.3, 4.0))
+    x = range(12)
+    ax.plot(x, sleeve.values, marker='o', ms=4, lw=1.8, color=_TF_C['red'],
+            label='Bitcoin + gold sleeve ($bn, left)')
+    ax.plot(x, buf.values, marker='s', ms=3.5, lw=1.8, color=_TF_C['USDT'],
+            label='Reserve buffer ($bn, left)')
+    ax.fill_between(x, buf.values, sleeve.values,
+                    where=sleeve.values > buf.values,
+                    color=_TF_C['red'], alpha=0.06, lw=0)
+    ax.set_ylabel('$ billion'); ax.set_ylim(0, 28)
+    ax2 = ax.twinx(); ax2.spines['top'].set_visible(False); ax2.grid(False)
+    ax2.plot(x, brk.values, ls='--', marker='D', ms=3.2, lw=1.3, color=_TF_C['gray'],
+             label='Break-even combined price shock (|%|, right)')
+    ax2.set_ylabel('Break-even shock, absolute (%)', color=_TF_C['gray'])
+    ax2.tick_params(axis='y', colors=_TF_C['gray']); ax2.set_ylim(0, 100)
+    ax2.annotate('peak resilience:\n\u221286% (Q4 2023)', xy=(3, 86), xytext=(0.4, 68),
+                 fontsize=8, color=_TF_C['gray'],
+                 arrowprops=dict(arrowstyle='->', color=_TF_C['gray'], lw=0.9))
+    ax2.annotate(_TF_MILDEST_FAIL_LABEL, xy=(11, 25), xytext=(7.6, 8),
+                 fontsize=8, color=_TF_C['gray'],
+                 arrowprops=dict(arrowstyle='->', color=_TF_C['gray'], lw=0.9))
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"Q{q.split('-Q')[1]}\n{q[:4]}" for q in q12], fontsize=7.8)
+    h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, loc='upper left', fontsize=8.2)
+    fig.savefig(THESIS_FIG_DIR / 'fig_6_2_combined_stress.png'); plt.close(fig)
+    return dict(zip(q12, brk.round(0).values))
+
+
+def _tf_fig_6_3(share):
+    sh = share.set_index('Quarter').reindex(_TF_QUARTERS)
+    fig, ax = plt.subplots(figsize=(7.3, 3.6))
+    ax.bar(range(14), sh['Sector_Tbills_bn'], color='#8fa8c4', width=0.62,
+           label='USDC + USDT direct T-bills ($bn, left)')
+    ax.set_ylabel('$ billion'); ax.set_ylim(0, 155)
+    ax2 = ax.twinx(); ax2.spines['top'].set_visible(False); ax2.grid(False)
+    ax2.plot(range(14), sh['Share_pct'], marker='o', ms=3.5, lw=1.6, color=_TF_C['red'],
+             label='Share of marketable bills outstanding (%, right)')
+    ax2.set_ylabel('% of bills outstanding', color=_TF_C['red'])
+    ax2.tick_params(axis='y', colors=_TF_C['red']); ax2.set_ylim(0, 3.4)
+    _tf_qticks(ax, _TF_QUARTERS)
+    h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, loc='upper left', fontsize=8.2)
+    fig.savefig(THESIS_FIG_DIR / 'fig_6_3_tbill_share.png'); plt.close(fig)
+
+
+def _tf_fig_7_1(score, schemes):
+    nice = {'Equal': 'Equal weights', 'Drop rwa': 'Drop RWA density',
+            'Drop mtm': 'Drop MtM', 'Drop lcr': 'Drop LCR',
+            'Drop risk': 'Drop off-Basel', 'Drop disc': 'Drop disclosure'}
+    schemes = schemes.copy(); schemes['Scheme'] = schemes['Scheme'].replace(nice)
+    sc = schemes.set_index('Scheme')
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(7.3, 4.6), height_ratios=[1, 1.7],
+                                 sharex=True, gridspec_kw={'hspace': 0.12})
+    for a in (a1, a2):
+        a.axvspan(0, 33, color='#e2efe6', lw=0)
+        a.axvspan(33, 50, color='#f7f0da', lw=0)
+        a.axvspan(50, 100, color='#f7e4e1', lw=0)
+        a.set_xlim(0, 100); a.grid(False)
+    for xx, txt, col in ((16.5, 'narrow-bank (<33)', '#3e6b4f'),
+                         (41.5, 'hybrid', '#8a6d1f'),
+                         (75, 'MMF-like (\u226550)', '#8c3a32')):
+        a1.text(xx, 1.02, txt, fontsize=8, ha='center', color=col,
+                transform=a1.get_xaxis_transform())
+    ypos = {'USDC': 0, 'USDP': 1, 'USDT': 2}
+    for _, r in score.iterrows():
+        y = ypos[r['Issuer']]
+        a1.plot([r['Band_lo'], r['Band_hi']], [y, y], lw=4, color=_TF_C[r['Issuer']],
+                alpha=0.35, solid_capstyle='round')
+        a1.plot(r['Score'], y, 'o', ms=7, color=_TF_C[r['Issuer']])
+        a1.text(r['Band_hi'] + 1.5, y, f"{r['Issuer']}  {r['Score']:.1f}",
+                fontsize=8.5, va='center', color=_TF_C[r['Issuer']])
+    a1.set_ylim(-0.7, 2.7); a1.set_yticks([]); a1.spines['left'].set_visible(False)
+    for i, (_, row) in enumerate(sc.iloc[::-1].iterrows()):
+        for iss in ('USDP', 'USDC', 'USDT'):
+            a2.plot(row[iss], i, 'o', ms=5, color=_TF_C[iss], mec='white', mew=0.5)
+    a2.set_yticks(range(len(sc))); a2.set_yticklabels(sc.index[::-1], fontsize=8)
+    a2.set_ylim(-0.6, len(sc) - 0.4)
+    a2.set_xlabel('Composite score (0 = narrow-bank pole, 100 = MMF pole)')
+    for iss in ('USDC', 'USDP', 'USDT'):
+        a2.plot([], [], 'o', ms=5, color=_TF_C[iss], label=iss)
+    a2.legend(loc='center right', fontsize=8)
+    fig.savefig(THESIS_FIG_DIR / 'fig_7_1_classification.png'); plt.close(fig)
+
+
+def make_thesis_figures():
+    """Section 9 entry point: regenerate the seven publication figures."""
+    print('\n' + '=' * 78)
+    print('SECTION 9: Publication figures for the written thesis')
+    print('=' * 78)
+    THESIS_FIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _csv(name):
+        p = OUT_DIR / name
+        return pd.read_csv(p) if p.exists() else None
+
+    cb, mtm = _csv('capital_bridge_timeseries.csv'), _csv('mtm_loss_timeseries.csv')
+    lcr, usdp_rwa = _csv('lcr_effective_coverage.csv'), _csv('usdp_rwa_table.csv')
+    share = _csv('stablecoin_tbill_share.csv')
+    score = _csv('classification_scorecard.csv')
+    schemes = _csv('classification_weight_sensitivity.csv')
+    eps = _csv('rate_shock_episodes.csv')
+    if eps is not None:
+        for c in ('start', 'end', 'peak_date'):
+            eps[c] = pd.to_datetime(eps[c])
+    if mtm is not None:
+        mtm = mtm.drop_duplicates(['Quarter', 'Issuer'])
+
+    try:
+        bank = pd.read_excel(EXCEL_PATH, sheet_name='Bank_Benchmark',
+                             skiprows=3, header=0)
+        bank.columns = ['Quarter', 'JPM', 'JPM_RWA', 'BNY', 'USDC', 'USDT', 'USDP']
+        bank = bank.dropna(subset=['Quarter']).head(14)
+    except Exception as e:
+        bank = None
+        print(f'  [thesis-figs] Bank_Benchmark sheet unavailable ({e}); skipping fig 4.2')
+    try:
+        bg = pd.read_excel(EXCEL_PATH, sheet_name='BTC_Gold_Shocks',
+                           skiprows=4, header=0)
+        bg.columns = ['Quarter', 'Shock', 'BTC', 'Gold', 'Equity', 'LossBTC',
+                      'BufBTC', 'LossGold', 'BufGold', 'LossComb', 'BufComb',
+                      'Breakeven']
+        bg = (bg.dropna(subset=['Quarter']).drop_duplicates('Quarter')
+                .set_index('Quarter').reindex(_TF_QUARTERS))
+    except Exception as e:
+        bg = None
+        print(f'  [thesis-figs] BTC_Gold_Shocks sheet unavailable ({e}); skipping fig 6.2')
+
+    tb_series, _basis = load_long_bill_history()
+
+    with plt.rc_context(_TF_STYLE):
+        if cb is not None and mtm is not None and usdp_rwa is not None:
+            _tf_fig_4_1(cb, mtm, usdp_rwa);  print('  Saved fig_4_1_rwa_density.png')
+        if bank is not None:
+            _tf_fig_4_2(bank);               print('  Saved fig_4_2_bank_corridor.png')
+        if tb_series is not None and eps is not None:
+            _tf_fig_5_1(tb_series, eps);     print('  Saved fig_5_1_rate_shock_history.png')
+        else:
+            print('  [thesis-figs] TB3MS.csv or rate_shock_episodes.csv missing; '
+                  'skipping fig 5.1')
+        if lcr is not None:
+            _tf_fig_6_1(lcr);                print('  Saved fig_6_1_lcr_40pct.png')
+        if bg is not None:
+            brk = _tf_fig_6_2(bg)
+            print('  Saved fig_6_2_combined_stress.png')
+            print('    break-even (verify vs Table 6.4):',
+                  {q: int(v) for q, v in brk.items()})
+        if share is not None:
+            _tf_fig_6_3(share);              print('  Saved fig_6_3_tbill_share.png')
+        if score is not None and schemes is not None:
+            _tf_fig_7_1(score, schemes);     print('  Saved fig_7_1_classification.png')
+
+    print(f'  -> {THESIS_FIG_DIR}')
+
+
+if __name__ == '__main__':
+    # Second entry point under the append-only convention: `python analysis.py`
+    # runs main() above (Sections 1-8) and then regenerates the thesis figures.
+    make_thesis_figures()
