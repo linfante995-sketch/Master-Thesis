@@ -63,7 +63,7 @@ warnings.filterwarnings('ignore')
 # Single base folder. Every input (master Excel, TB3MS.csv, MSPD csv) lives
 # directly in BASE_DIR, and the outputs/ folder is created inside it.
 # To run on another machine, change BASE_DIR only — nothing else.
-BASE_DIR = Path(r'C:\Users\lucho\OneDrive\Escritorio\Thesis Master')
+BASE_DIR = Path(r'C:\Users\lucho\Documents\GitHub\Master-Thesis')
 
 # Allow an env-var override (handy for servers / CI) without touching code:
 #   set THESIS_DIR=...   (Windows)  /  export THESIS_DIR=...  (mac/Linux)
