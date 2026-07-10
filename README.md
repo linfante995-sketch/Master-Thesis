@@ -1,8 +1,8 @@
 # Capital Adequacy and Liquidity Resilience of Fiat-Backed Stablecoins
 
-**Master's Thesis — Frankfurt School of Finance & Management**  
-**Author:** Luis Enrique Infante Altamirano  
-**Supervisor:** Prof. Co-Pierre Georg  
+**Master's Thesis — Frankfurt School of Finance & Management**
+**Author:** Luis Enrique Infante Altamirano
+**Supervisor:** Prof. Co-Pierre Georg
 **Scope:** Q3 2022 – Q4 2025 (14 quarters) · USDC (Circle) · USDT (Tether) · USDP (Paxos, narrow-bank control)
 
 ---
@@ -10,9 +10,12 @@
 ## What this repository is
 
 This repository contains the complete analytical pipeline for the thesis. One Python script
-(`analysis.py`) loads primary data from the master dataset, runs all four research-question
-analyses end-to-end, and writes every table and figure used in the thesis. Nothing is
-hard-coded or hand-tuned; all results are reproducible from the input files.
+(`analysis.py`, ten append-only sections, 0–9) loads primary data from the **Stablecoin
+Reserve Panel** — the consolidated dataset of the thesis, file
+`USDC_USDT_USDP_Basel3_Master_v8.xlsx`, cited in the thesis as (Infante, 2026) — runs all
+four research-question analyses plus the off-Basel combined stress end-to-end, and writes
+every table and figure used in the thesis, including the seven publication figures.
+Nothing is hard-coded or hand-tuned; all results are reproducible from the input files.
 
 **Central finding:** asset composition and disclosure quality — not issuer size — determine
 a stablecoin's regulatory profile. USDT (~$186bn) holds ~22% of its reserves in off-Basel
@@ -28,18 +31,18 @@ control: whole-book HQLA, near-zero rate risk, commercially wound down by end of
 | # | Question | Method | Headline result |
 |---|---|---|---|
 | **RQ1** | How does risk-weighted asset (RWA) density evolve? | Basel III risk-weight ladder (SCO60, CRE20) applied to quarterly reserve books | USDC 3.3% mean density; USDT 58.6% mean — driven by Bitcoin at 1250% (73.9% of USDT's total RWA) |
-| **RQ2** | How sensitive are reserves to rate moves? | Duration-based MtM stress, 4 WAM assumptions × 3 shocks | Sovereign losses <2% of assets for all three at +400bp/180d. Short WAM is the safeguard. Rate stress ≠ total stress for USDT: BTC and gold are excluded (see below) |
+| **RQ2** | How sensitive are reserves to rate moves? | Duration-based MtM stress, 4 WAM assumptions × 3 shocks | Sovereign losses <2% of assets for all three at +400bp/180d. Short WAM is the safeguard. Rate stress ≠ total stress for USDT: BTC and gold carry price risk, stressed separately in the combined off-Basel grid (see below) |
 | **RQ3** | Can each issuer meet a large redemption run? | Basel III LCR analogue, 20/40/60% outflow scenarios, look-through and opaque-MMF treatments | Liquidity not the binding constraint under look-through. Disclosure opacity has a measurable price: opaque USDC fails a 60% run it passes under look-through |
 | **RQ4** | Narrow bank or money-market fund? | Five-axis composite scorecard (0 = narrow-bank, 100 = MMF-like), OECD/JRC-grounded weights | USDP 25 → USDC 16 → USDT 55. Ordinal ranking survives 92.5% of all possible weightings (20,000-draw Monte-Carlo) |
 
 ---
 
-## On Bitcoin and gold — what this thesis does and does not cover
+## On Bitcoin and gold — capital treatment and price stress
 
 This is the most important scope note in the repository.
 
-**What is included:**  
-Bitcoin (BTC) and gold appear in the analysis at their Basel III risk weights:
+**Basel capital treatment (RQ1):**
+Bitcoin (BTC) and gold enter the analysis at their Basel III risk weights:
 - Bitcoin: **1250%** (Basel SCO60.108, Group 2 unbacked cryptoasset). At Q4 2025, Tether holds
   $8.4bn BTC → generates $105.4bn of RWA, which is 73.9% of Tether's entire RWA. This is the
   single most consequential number in RQ1.
@@ -53,16 +56,24 @@ RWA rises even without new purchases. USDT's RWA ratio peaked at ~86% (Q3 2025, 
 BTC high) and fell to 74% in Q4 2025 as BTC corrected — entirely driven by price, not
 by changes in portfolio composition.
 
-**What is NOT included — the open point:**  
-RQ2 (rate stress) and RQ3 (liquidity stress) model only the **sovereign fixed-income sleeve**
-(T-bills, repos). BTC and gold do not have duration — they have **price risk** — and a
-duration model cannot capture that. A price-shock stress (e.g. BTC −50%/−65%/−80%;
-gold −10%/−20%/−30%) against the thin reserve equity buffer would complete the risk
-picture for USDT and is the **one remaining analytical extension** not yet implemented.
-At Q4 2025, a −65% BTC drawdown on $8.4bn of BTC notional would produce a ~$5.5bn loss
-against a ~$6.4bn reserve surplus — nearly wiping the buffer. USDC and USDP are immune
-(zero BTC/gold). This gap is documented in the thesis as a limitation and a candidate
-for future work.
+**Off-Basel price stress — implemented (Section 8):**
+Because BTC and gold carry **price risk** rather than duration, the rate model of RQ2
+cannot capture them. Section 8 therefore stresses the disclosed BTC + gold sleeve
+directly: a joint grid of combined price shocks (−20% / −30% / −40% / −50%) crossed
+with the rate scenarios, plus a quarterly **break-even combined shock** — the sleeve
+drawdown that exactly exhausts the reserve equity buffer. Headline results:
+- The sleeve grows roughly fivefold over the disclosure window ($4.9bn Q1 2023 →
+  $25.9bn Q4 2025) while the buffer stays flat-to-declining (dividends exceed profit
+  in FY2025).
+- The break-even narrows from −50% at first disclosure to a peak-resilience −86%
+  (Q4 2023) and down to **−25% by Q4 2025** — at which point the mildest cell of the
+  joint grid (−20% price / +400bp rate) fails.
+- USDC and USDP are immune (zero BTC/gold).
+
+**Exclusion rule:** a shocked exposure must be both disclosed and carry an observable
+shock parameter. Tether's secured loans (~$17bn, collateral undisclosed) fail the second
+criterion and are handled via assumption-free bound arithmetic and a case study — not a
+scenario leg.
 
 ---
 
@@ -121,13 +132,14 @@ the disclosure axis in RQ4.
 
 ```
 /
-├── analysis.py                          # Main script — runs all 7 sections end to end
-├── USDC_USDT_USDP_Basel3_Master_v8.xlsx # Master dataset (primary source of truth)
+├── analysis.py                          # Main script — Sections 0–9, append-only
+├── USDC_USDT_USDP_Basel3_Master_v8.xlsx # Stablecoin Reserve Panel (primary source of truth)
 ├── TB3MS.csv                            # FRED: 3-month T-bill rate, monthly 1934–present
 ├── MSPD_SumSecty_20010131_20260531.csv  # US Treasury MSPD: marketable bills outstanding
 ├── requirements.txt                     # Python dependencies
 ├── README.md                            # This file
 └── outputs/                             # Auto-created on first run; all figures and CSVs
+    └── thesis_figures/                  # Section 9: the seven publication figures (300 dpi)
 ```
 
 ---
@@ -142,17 +154,19 @@ All inputs are original primary public sources. No data was purchased or license
 | **USDT consolidated reserve reports** | Quarterly ISAE 3000R opinions by BDO. Reserve assets by line (T-bills, repos, MMF, cash, BTC, gold, secured loans, other). From 2024: consolidated group balance sheet + change-in-equity | [tether.to/transparency](https://tether.to/en/transparency/) |
 | **USDP reserve examinations** | Quarterly examinations by Withum (to 2024), KPMG (2025). Full asset breakdown: T-bills, repos, cash | [paxos.com/attestations](https://paxos.com/attestations/) |
 | **TB3MS** | 3-month T-bill, monthly, 1934–present. Used for +400bp episode frequency analysis (90-year record) | [fred.stlouisfed.org/series/TB3MS](https://fred.stlouisfed.org/series/TB3MS) |
-| **DGS1MO, DGS3MO, DGS6MO, DGS1** | Daily constant-maturity yields. In-sample yield curve for rate shock calibration | FRED, series DGS1MO / DGS3MO / DGS6MO / DGS1 |
+| **DGS1MO, DGS3MO, DGS6MO, DGS1** | Daily constant-maturity yields; in-sample yield-curve path for rate-shock calibration. Embedded in the Panel's `Yield_Curve` sheet — not shipped as separate CSVs | FRED, series DGS1MO / DGS3MO / DGS6MO / DGS1 |
 | **MSPD** | US Treasury Monthly Statement of the Public Debt: marketable T-bills outstanding by month. Used for stablecoin T-bill footprint analysis | [fiscaldata.treasury.gov](https://fiscaldata.treasury.gov/datasets/monthly-statement-public-debt/) |
 | **USDC/USDT daily price and supply** | Daily peg price and circulating supply. Used for data-driven structural-event detection | [CoinGecko](https://www.coingecko.com) |
 | **Circle group financials** | Audited consolidated income statement and balance sheet 2022–2024 (S-1) and quarterly 2025 (10-Q), including reserve income, net income, stockholders' equity. Confirms reserve-level methodology and provides the group-equity context series | SEC EDGAR, CIK 0001876042 — [S-1/A filed 2025-05-27](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001876042); 10-Q Q1/Q2/Q3 2025 |
+| **Bank benchmark** | JPMorgan and BNY Mellon CET1 ratios (standardised), quarterly earnings releases. Embedded in the Panel's `Bank_Benchmark` sheet | Company 8-K / IR releases |
 
-The master Excel (`USDC_USDT_USDP_Basel3_Master_v8.xlsx`) consolidates all of the above
-into 13 sheets, including `Tether_Equity_Profit` (reserve-entity and group equity/profit
-from BDO consolidated attestations, 2024–2025; not disclosed pre-2024) and
-`Circle_Equity_Profit` (group equity, net income and reserve income from SEC filings —
-S-1 audited 2022–2024, 10-Q 2025). It is the single verified input file; no data is
-fetched at runtime.
+The Stablecoin Reserve Panel (`USDC_USDT_USDP_Basel3_Master_v8.xlsx`) consolidates all of
+the above — including the `Yield_Curve`, `Bank_Benchmark`, `BTC_Gold_Shocks`,
+`Joint_Stress` and `Combined_Stress_TS` sheets, plus `Tether_Equity_Profit`
+(reserve-entity and group equity/profit from BDO consolidated attestations, 2024–2025;
+not disclosed pre-2024) and `Circle_Equity_Profit` (group equity, net income and reserve
+income from SEC filings). It is the single verified input file; no data is fetched at
+runtime, and it is locked at v8 — the analysis reads it, nothing writes to it.
 
 ---
 
@@ -168,16 +182,8 @@ pip install -r requirements.txt
 
 ### Configuration
 
-Open `analysis.py` and set `BASE_DIR` at line 65 to the folder containing the three input files:
-
-```python
-# Windows
-BASE_DIR = Path(r'C:\Users\yourname\Documents\thesis')
-# macOS / Linux
-BASE_DIR = Path('/Users/yourname/thesis')
-```
-
-Or use an environment variable without touching the code:
+Set the folder containing the three input files, either via environment variable
+(recommended — no code change):
 
 ```bash
 # macOS / Linux
@@ -189,20 +195,27 @@ $env:THESIS_DIR = "C:\path\to\folder"
 python analysis.py
 ```
 
+or by editing `BASE_DIR` near the top of Section 0 in `analysis.py`.
+
 ### Run
 
 ```bash
 python analysis.py
 ```
 
-The script prints progress to the console. All 33 outputs are written to `outputs/`
-inside the base folder. A full run takes approximately 2–4 minutes.
+The script prints progress to the console, runs Sections 1–8, and finishes by
+regenerating the seven publication figures (Section 9) into `outputs/thesis_figures/`,
+printing the break-even series for verification against thesis Table 6.4. A full run
+takes approximately 2–4 minutes.
 
 ---
 
 ## Script structure
 
-`analysis.py` is one growing file with seven sections:
+`analysis.py` is one growing file with ten sections. The convention is **append-only**:
+once a section is written it is never modified; new functionality is added as a new
+section. (One documented exception: a single `import numpy as np` line was added to
+Section 0 in July 2026 because Section 8 introduced a top-level constant using `np.nan`.)
 
 | Section | Content |
 |---|---|
@@ -214,14 +227,17 @@ inside the base folder. A full run takes approximately 2–4 minutes.
 | 5 | Redemption/LCR stress — RQ3 (look-through and opaque-MMF treatments) |
 | 6 | Narrow-bank vs MMF classification — RQ4 (scorecard + weight robustness) |
 | 7 | Data-driven structural-event detection (validation against known crises) |
+| 8 | Supervisor extensions — reserve-level capital bridge and retention arc, JPM/BNY CET1 bank benchmark, off-Basel BTC+gold price-shock and combined-stress grids, break-even series |
+| 9 | Publication figures for the written thesis — reads locked outputs only, recomputes nothing; writes `outputs/thesis_figures/` |
 
 ---
 
 ## Outputs
 
-All 31 files are written to `BASE_DIR/outputs/`.
+All outputs are written to `BASE_DIR/outputs/`. The authoritative inventory is whatever
+a fresh run produces; the tables below list the main files by section.
 
-### Figures (16)
+### Working figures (Sections 2–8)
 
 | File | What it shows |
 |---|---|
@@ -231,7 +247,7 @@ All 31 files are written to `BASE_DIR/outputs/`.
 | `rwa_ratio_threeway.png` | Three-issuer RWA ratio comparison over 14 quarters |
 | `fig_duration_stress.png` | MtM loss heatmap: WAM × rate shock × issuer — sovereign book only (RQ2) |
 | `fig_duration_timeseries.png` | Sovereign MtM loss time-series, adverse ceiling (180d/+400bp) |
-| `fig_rate_history.png` | In-sample yield curve 2022–2025 (DGS series) |
+| `fig_rate_history.png` | In-sample yield curve 2022–2025 (DGS series, `Yield_Curve` sheet) |
 | `fig_rate_history_long.png` | 90-year TB3MS history — +400bp episodes flagged and counted |
 | `fig_lcr_stress.png` | LCR grid: outflow scenario × quarter × issuer (RQ3) |
 | `fig_lcr_effective.png` | Effective LCR: combined RQ2×RQ3 forced-sale formula |
@@ -242,7 +258,22 @@ All 31 files are written to `BASE_DIR/outputs/`.
 | `fig_capital_ratio.png` | Reserve-level risk-weighted equity ratio over 14 quarters (all issuers) |
 | `fig_structural_events.png` | Data-driven event detection vs known crises (FTX, SVB, Paxos/BUSD) |
 
-### Tables — CSV (15)
+Section 8 adds further working figures and CSVs for the capital bridge, retention arc,
+bank benchmark and combined stress (including `combined_stress_timeseries.csv`).
+
+### Publication figures (Section 9, `outputs/thesis_figures/`)
+
+| File | Thesis placement |
+|---|---|
+| `fig_4_1_rwa_density.png` | §4.2 — three RWA-density regimes + look-through premium |
+| `fig_4_2_bank_corridor.png` | §4.3.2 — issuer RW-equity vs JPM/BNY CET1 corridor, 7% line |
+| `fig_5_1_rate_shock_history.png` | §5.2 — 92 years of TB3MS 12-month changes, four episodes |
+| `fig_6_1_lcr_40pct.png` | §6.3.1 — LCR at the 40% run, all issuers |
+| `fig_6_2_combined_stress.png` | §6.3.4 — sleeve vs buffer vs break-even ("scissors") |
+| `fig_6_3_tbill_share.png` | §6.2 — sector T-bill footprint |
+| `fig_7_1_classification.png` | §7.3.2 — classification spectrum + weighting schemes |
+
+### Tables — CSV (Sections 1–7)
 
 | File | Contents |
 |---|---|
@@ -293,6 +324,13 @@ case; 60% is the tail / stress. HQLA treatment follows the two USDC treatments a
 LCR pass threshold: 100% (Basel standard). The look-through vs opaque gap directly
 measures the price of disclosure opacity.
 
+### Off-Basel combined stress (Section 8)
+
+Joint grid of combined BTC+gold price shocks (−20% / −30% / −40% / −50%) crossed with
+the rate scenarios, applied to Tether's disclosed sleeve against reserve equity, plus a
+quarterly break-even combined shock. Secured loans are excluded under the exclusion rule
+(disclosed **and** observable shock parameter required) and handled via bound arithmetic.
+
 ### Classification scorecard — weight rationale
 
 Weights are theory-based and fixed before observing results:
@@ -324,6 +362,7 @@ simultaneous −15% supply contraction over 7 days are the largest signals in th
 | BTC contribution to USDT RWA | — | $105.4bn / 73.9% of RWA | — |
 | MtM loss, +400bp/180d — mean | 1.6% of assets | 1.5% (sovereign only) | 0.7% |
 | LCR @ 40% run, look-through — mean | 206% | 192% | 96% |
+| Break-even combined BTC+gold shock (Q4-2025) | — (no sleeve) | **−25%** (peak −86%, Q4 2023) | — (no sleeve) |
 | Classification score (0–100) | **16 — Narrow-bank** | **55 — MMF-like** | **25 — Narrow-bank** |
 | Reserve RW-equity ratio — mean | 6.2% | 6.7% | 11.5% |
 | Reserve equity at Q4-2025 | $67m (9 bps) | $6.4bn (333 bps) | ~$0 |
@@ -337,11 +376,12 @@ USDT's risk profile collapses toward USDC's. Composition, not size.
 
 ## Known limitations
 
-1. **BTC/gold price-shock stress is not implemented.** The rate stress (RQ2) covers only
-   the sovereign fixed-income sleeve. A price-shock scenario for the off-Basel sleeve
-   (BTC −50/−65/−80%; gold −10/−20/−30%) would complete the picture and is the one
-   remaining extension. At Q4 2025, a −65% BTC shock alone would nearly match Tether's
-   entire reserve equity buffer.
+1. **The off-Basel stress is static grid arithmetic.** The combined BTC+gold stress
+   (Section 8) shocks disclosed notionals against the reserve buffer at a point in time;
+   it does not model correlated stochastic paths, liquidation dynamics, or feedback
+   between redemptions and forced sleeve sales. Tether's secured loans (~$17bn, collateral
+   undisclosed) fail the observable-shock-parameter criterion and are handled via
+   assumption-free bound arithmetic, not a scenario leg.
 
 2. **Fire-sale / price-taker assumption.** The LCR model assumes the issuer can liquidate
    assets at prevailing market prices without moving them. Holds at current sector scale
@@ -361,15 +401,24 @@ USDT's risk profile collapses toward USDC's. Composition, not size.
 
 ## Citation
 
+Thesis:
+
 > Infante Altamirano, L. E. (2026). *Capital Adequacy and Liquidity Resilience of
 > Fiat-Backed Stablecoins: A Quarterly Stress-Testing Analysis (2022–2025).*
 > Master's Thesis, Frankfurt School of Finance & Management.
 > Supervisor: Prof. Co-Pierre Georg.
 
+Dataset:
+
+> Infante, L. (2026). *The Stablecoin Reserve Panel: reserve and analysis dataset for
+> USDC, USDT, and USDP, Q3 2022–Q4 2025* [data file:
+> `USDC_USDT_USDP_Basel3_Master_v8.xlsx`]. Master's thesis dataset, Frankfurt School of
+> Finance & Management. https://github.com/linfante995-sketch/Master-Thesis
+
 ---
 
 ## License
 
-Code: MIT License.  
+Code: MIT License.
 Data compiled from primary public disclosures (Circle/Tether/Paxos attestations, FRED,
 US Treasury MSPD, SEC EDGAR, CoinGecko). See individual source terms for data use.
