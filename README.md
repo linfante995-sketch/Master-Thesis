@@ -122,7 +122,7 @@ the disclosure axis in RQ4.
 ```
 /
 ├── analysis.py                          # Main script — runs all 7 sections end to end
-├── USDC_USDT_USDP_Basel3_Master_v5.xlsx # Master dataset (primary source of truth)
+├── USDC_USDT_USDP_Basel3_Master_v8.xlsx # Master dataset (primary source of truth)
 ├── TB3MS.csv                            # FRED: 3-month T-bill rate, monthly 1934–present
 ├── MSPD_SumSecty_20010131_20260531.csv  # US Treasury MSPD: marketable bills outstanding
 ├── requirements.txt                     # Python dependencies
@@ -147,7 +147,7 @@ All inputs are original primary public sources. No data was purchased or license
 | **USDC/USDT daily price and supply** | Daily peg price and circulating supply. Used for data-driven structural-event detection | [CoinGecko](https://www.coingecko.com) |
 | **Circle group financials** | Audited consolidated income statement and balance sheet 2022–2024 (S-1) and quarterly 2025 (10-Q), including reserve income, net income, stockholders' equity. Confirms reserve-level methodology and provides the group-equity context series | SEC EDGAR, CIK 0001876042 — [S-1/A filed 2025-05-27](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001876042); 10-Q Q1/Q2/Q3 2025 |
 
-The master Excel (`USDC_USDT_USDP_Basel3_Master_v5.xlsx`) consolidates all of the above
+The master Excel (`USDC_USDT_USDP_Basel3_Master_v8.xlsx`) consolidates all of the above
 into 13 sheets, including `Tether_Equity_Profit` (reserve-entity and group equity/profit
 from BDO consolidated attestations, 2024–2025; not disclosed pre-2024) and
 `Circle_Equity_Profit` (group equity, net income and reserve income from SEC filings —
