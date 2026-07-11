@@ -60,10 +60,14 @@ import matplotlib.pyplot as plt
 warnings.filterwarnings('ignore')
 
 # --- File paths -------------------------------------------------------------
-# Single base folder. Every input (master Excel, TB3MS.csv, MSPD csv) lives
-# directly in BASE_DIR, and the outputs/ folder is created inside it.
-# To run on another machine, change BASE_DIR only — nothing else.
-BASE_DIR = Path(r'C:\Users\lucho\Documents\GitHub\Master-Thesis')
+# Single base folder. The master Excel is the ONLY input file — TB3MS, the
+# MSPD bills-outstanding series, and the BTC daily price history are all
+# embedded in it as sheets (TB3MS, MSPD_SumSecty, BTC_Daily). The outputs/
+# folder is created inside BASE_DIR.
+# Defaults to the folder this script lives in, so `git clone` + `python
+# analysis.py` works unmodified on any machine. Override with THESIS_DIR if
+# the master Excel lives elsewhere.
+BASE_DIR = Path(__file__).resolve().parent
 
 # Allow an env-var override (handy for servers / CI) without touching code:
 #   set THESIS_DIR=...   (Windows)  /  export THESIS_DIR=...  (mac/Linux)
@@ -76,9 +80,7 @@ for _fb in ('USDC_USDT_USDP_Basel3_Master_v7.xlsx',
             'USDC_USDT_USDP_Basel3_Master_v5.xlsx'):
     if not EXCEL_PATH.exists():
         EXCEL_PATH = BASE_DIR / _fb
-TB3MS_PATH = BASE_DIR / 'TB3MS.csv'
-MSPD_PATH  = BASE_DIR / 'MSPD_SumSecty_20010131_20260531.csv'
-OUT_DIR    = BASE_DIR / 'outputs'
+OUT_DIR = BASE_DIR / 'outputs'
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Analytical scope ---
@@ -1487,27 +1489,27 @@ def make_historical_context_figure(s, rolled, threshold_bp=400):
 # basis only reaches ~1982 (DGS3MO) and daily discount only to 1954 (DTB3), so
 # TB3MS is the only series reaching the 1973 and 1979-81 episodes.
 #
-# The file is optional: if TB3MS.csv is absent, this block is skipped and the
-# in-sample calibration alone is used.
+# The TB3MS sheet is optional: if it is absent from the workbook, this block
+# is skipped and the in-sample calibration alone is used.
 # ------------------------------------------------------------------------------
 
-# TB3MS_PATH is defined once at the top (BASE_DIR / 'TB3MS.csv').
 SHOCK_THRESHOLD_BP = 400          # the adverse scenario we benchmark against
 EPISODE_GAP_MONTHS = 3            # consecutive months within this gap = one episode
 
 
-def load_long_bill_history(path=None):
+def load_long_bill_history(sheet_name='TB3MS'):
     """
-    Load the long monthly 3-month bill series (TB3MS). Auto-detects the rate
-    column and flags whether the series is discount or investment basis from
-    its name, so a swapped-in DGS3MO file would also work.
+    Load the long monthly 3-month bill series (TB3MS) from the master
+    workbook's TB3MS sheet. Auto-detects the rate column and flags whether
+    the series is discount or investment basis from its name, so a
+    swapped-in DGS3MO sheet would also work.
 
-    Returns (series, basis_label) or (None, None) if the file is absent.
+    Returns (series, basis_label) or (None, None) if the sheet is absent.
     """
-    p = Path(path) if path else TB3MS_PATH
-    if not p.exists():
+    try:
+        df = pd.read_excel(EXCEL_PATH, sheet_name=sheet_name)
+    except Exception:
         return None, None
-    df = pd.read_csv(p)
     date_col = [c for c in df.columns if 'date' in c.lower()][0]
     rate_col = [c for c in df.columns if c != date_col][0]
     df[date_col] = pd.to_datetime(df[date_col])
@@ -2084,9 +2086,10 @@ def make_effective_lcr_figure(eff, outflow_pct=40):
 # Monthly Statement of the Public Debt (MSPD), Marketable / Bills, quarter-end.
 # ==============================================================================
 
-def load_bills_outstanding(mspd_path):
-    """Quarter-end marketable T-bills outstanding ($bn) from the Treasury MSPD."""
-    df = pd.read_csv(mspd_path)
+def load_bills_outstanding(sheet_name='MSPD_SumSecty'):
+    """Quarter-end marketable T-bills outstanding ($bn) from the Treasury MSPD
+    sheet in the master workbook."""
+    df = pd.read_excel(EXCEL_PATH, sheet_name=sheet_name)
     bills = df[(df['Security Type Description'] == 'Marketable') &
                (df['Security Class Description'] == 'Bills')].copy()
     bills['Record Date'] = pd.to_datetime(bills['Record Date'])
@@ -3148,10 +3151,9 @@ def compute_joint_stress(panel, sov_wam_days=90):
     """Correlations, triple-negative scan (BTC era), 1971+ gold-rates dual
     scan, and replay of worst episodes on the latest USDT book."""
     gold = load_gold_long()
-    btc = pd.read_csv(BASE_DIR / 'btcusdmax.csv')
-    btc['date'] = pd.to_datetime(btc['snapped_at'].str[:10])
-    btc = btc.set_index('date')['price'].resample('ME').last()
-    tb = pd.read_csv(BASE_DIR / 'TB3MS.csv')
+    btc = pd.read_excel(EXCEL_PATH, sheet_name='BTC_Daily')[['Date', 'BTC_Price_USD']]
+    btc = btc.set_index('Date')['BTC_Price_USD'].sort_index().resample('ME').last()
+    tb = pd.read_excel(EXCEL_PATH, sheet_name='TB3MS')
     tb['date'] = pd.to_datetime(tb['observation_date']) + pd.offsets.MonthEnd(0)
     tb = tb.set_index('date')['TB3MS'].astype(float)
 
@@ -3523,7 +3525,7 @@ def main():
         ep_df.to_csv(ep_path, index=False)
         print(f"  Saved {ep_path.name}  ({lstats['n_episodes']} episodes)")
     else:
-        print("\n  [long-history] TB3MS.csv not found next to the master Excel; "
+        print("\n  [long-history] TB3MS sheet not found in the master Excel; "
               "skipping the 1934-present frequency analysis.")
 
     # ---- SECTION 5: Week 2 Wed-Thu — Redemption / LCR liquidity stress (RQ3) ----
@@ -3578,9 +3580,13 @@ def main():
     print(f"  Saved {eff_fig_path.name}")
 
     # ---- Discussion scaffold: stablecoin T-bill footprint vs the market ----
-    mspd_path = MSPD_PATH
-    if mspd_path.exists():
-        bills_df = load_bills_outstanding(mspd_path)
+    try:
+        bills_df = load_bills_outstanding()
+    except Exception as e:
+        bills_df = None
+        print(f"\n  [tbill-footprint] MSPD_SumSecty sheet unavailable ({e}); "
+              f"skipping the T-bill footprint discussion figure.")
+    if bills_df is not None:
         share_df = compute_tbill_share(panel, bills_df)
         share_path = OUT_DIR / 'stablecoin_tbill_share.csv'
         share_df.to_csv(share_path, index=False)
@@ -4061,7 +4067,7 @@ def make_thesis_figures():
         if tb_series is not None and eps is not None:
             _tf_fig_5_1(tb_series, eps);     print('  Saved fig_5_1_rate_shock_history.png')
         else:
-            print('  [thesis-figs] TB3MS.csv or rate_shock_episodes.csv missing; '
+            print('  [thesis-figs] TB3MS sheet or rate_shock_episodes.csv missing; '
                   'skipping fig 5.1')
         if lcr is not None:
             _tf_fig_6_1(lcr);                print('  Saved fig_6_1_lcr_40pct.png')

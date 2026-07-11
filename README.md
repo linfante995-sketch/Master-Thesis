@@ -133,14 +133,17 @@ the disclosure axis in RQ4.
 ```
 /
 ├── analysis.py                          # Main script — Sections 0–9, append-only
-├── USDC_USDT_USDP_Basel3_Master_v8.xlsx # Stablecoin Reserve Panel (primary source of truth)
-├── TB3MS.csv                            # FRED: 3-month T-bill rate, monthly 1934–present
-├── MSPD_SumSecty_20010131_20260531.csv  # US Treasury MSPD: marketable bills outstanding
+├── USDC_USDT_USDP_Basel3_Master_v8.xlsx # Stablecoin Reserve Panel — the ONLY input file
 ├── requirements.txt                     # Python dependencies
 ├── README.md                            # This file
 └── outputs/                             # Auto-created on first run; all figures and CSVs
     └── thesis_figures/                  # Section 9: the seven publication figures (300 dpi)
 ```
+
+TB3MS, the MSPD bills-outstanding series, and the BTC daily price history — all
+previously shipped as standalone CSVs — are now embedded as sheets (`TB3MS`,
+`MSPD_SumSecty`, `BTC_Daily`) directly in the master Excel, so the workbook above
+is the single file `analysis.py` needs.
 
 ---
 
@@ -153,20 +156,21 @@ All inputs are original primary public sources. No data was purchased or license
 | **USDC reserve examinations** | Monthly reserve composition (T-bills, repos, MMF, cash), circulation. Grant Thornton 2020–2022; Deloitte from Jan 2023 | [circle.com/transparency](https://www.circle.com/en/usdc#transparency) |
 | **USDT consolidated reserve reports** | Quarterly ISAE 3000R opinions by BDO. Reserve assets by line (T-bills, repos, MMF, cash, BTC, gold, secured loans, other). From 2024: consolidated group balance sheet + change-in-equity | [tether.to/transparency](https://tether.to/en/transparency/) |
 | **USDP reserve examinations** | Quarterly examinations by Withum (to 2024), KPMG (2025). Full asset breakdown: T-bills, repos, cash | [paxos.com/attestations](https://paxos.com/attestations/) |
-| **TB3MS** | 3-month T-bill, monthly, 1934–present. Used for +400bp episode frequency analysis (90-year record) | [fred.stlouisfed.org/series/TB3MS](https://fred.stlouisfed.org/series/TB3MS) |
+| **TB3MS** | 3-month T-bill, monthly, 1934–present. Used for +400bp episode frequency analysis (90-year record). Embedded in the Panel's `TB3MS` sheet | [fred.stlouisfed.org/series/TB3MS](https://fred.stlouisfed.org/series/TB3MS) |
 | **DGS1MO, DGS3MO, DGS6MO, DGS1** | Daily constant-maturity yields; in-sample yield-curve path for rate-shock calibration. Embedded in the Panel's `Yield_Curve` sheet — not shipped as separate CSVs | FRED, series DGS1MO / DGS3MO / DGS6MO / DGS1 |
-| **MSPD** | US Treasury Monthly Statement of the Public Debt: marketable T-bills outstanding by month. Used for stablecoin T-bill footprint analysis | [fiscaldata.treasury.gov](https://fiscaldata.treasury.gov/datasets/monthly-statement-public-debt/) |
+| **MSPD** | US Treasury Monthly Statement of the Public Debt: marketable T-bills outstanding by month. Used for stablecoin T-bill footprint analysis. Embedded in the Panel's `MSPD_SumSecty` sheet | [fiscaldata.treasury.gov](https://fiscaldata.treasury.gov/datasets/monthly-statement-public-debt/) |
 | **USDC/USDT daily price and supply** | Daily peg price and circulating supply. Used for data-driven structural-event detection | [CoinGecko](https://www.coingecko.com) |
+| **BTC daily price** | Daily close, Apr 2013–present. Used for the BTC-era correlation scan and triple-negative replay in Section 8's joint stress analysis. Embedded in the Panel's `BTC_Daily` sheet | [CoinGecko](https://www.coingecko.com) |
 | **Circle group financials** | Audited consolidated income statement and balance sheet 2022–2024 (S-1) and quarterly 2025 (10-Q), including reserve income, net income, stockholders' equity. Confirms reserve-level methodology and provides the group-equity context series | SEC EDGAR, CIK 0001876042 — [S-1/A filed 2025-05-27](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001876042); 10-Q Q1/Q2/Q3 2025 |
 | **Bank benchmark** | JPMorgan and BNY Mellon CET1 ratios (standardised), quarterly earnings releases. Embedded in the Panel's `Bank_Benchmark` sheet | Company 8-K / IR releases |
 
 The Stablecoin Reserve Panel (`USDC_USDT_USDP_Basel3_Master_v8.xlsx`) consolidates all of
 the above — including the `Yield_Curve`, `Bank_Benchmark`, `BTC_Gold_Shocks`,
-`Joint_Stress` and `Combined_Stress_TS` sheets, plus `Tether_Equity_Profit`
-(reserve-entity and group equity/profit from BDO consolidated attestations, 2024–2025;
-not disclosed pre-2024) and `Circle_Equity_Profit` (group equity, net income and reserve
-income from SEC filings). It is the single verified input file; no data is fetched at
-runtime, and it is locked at v8 — the analysis reads it, nothing writes to it.
+`Joint_Stress`, `Combined_Stress_TS`, `TB3MS`, `MSPD_SumSecty` and `BTC_Daily` sheets,
+plus `Tether_Equity_Profit` (reserve-entity and group equity/profit from BDO consolidated
+attestations, 2024–2025; not disclosed pre-2024) and `Circle_Equity_Profit` (group equity,
+net income and reserve income from SEC filings). It is the single verified input file; no
+data is fetched at runtime, and `analysis.py` reads it — nothing writes to it during a run.
 
 ---
 
@@ -182,7 +186,7 @@ pip install -r requirements.txt
 
 ### Configuration
 
-Set the folder containing the three input files, either via environment variable
+Set the folder containing the master Excel file, either via environment variable
 (recommended — no code change):
 
 ```bash
