@@ -4014,6 +4014,113 @@ def _tf_fig_7_1(score, schemes):
     fig.savefig(THESIS_FIG_DIR / 'fig_7_1_classification.png'); plt.close(fig)
 
 
+# ==============================================================================
+# 2026-07-12: Ch6 figure additions
+# ------------------------------------------------------------------------------
+# Three further publication figures for Chapter 6 / Appendix A. Same house
+# style as the rest of Section 9 (_TF_STYLE, _TF_C, no in-image titles, 300
+# dpi). Each restyles an existing Section 8 working figure (make_joint_stress_
+# figure, make_price_shock_figure, make_combined_stress_figure) into the
+# publication aesthetic, in some cases re-pairing panels across those two
+# figures. No new computation: data comes from compute_joint_stress(),
+# compute_price_shock_panel() and compute_combined_stress_timeseries(),
+# already locked and used elsewhere in Sections 6 and 8.
+# ==============================================================================
+
+def _tf_fig_joint_stress_pub(dm, dq):
+    """(a) monthly scatter: d(3M yield) vs gold return, zero reference lines.
+       (b) BTC quarterly return bars, triple-negative quarters in accent color."""
+    fig, axes = plt.subplots(1, 2, figsize=(12.6, 4.3))
+
+    axes[0].scatter(dm['dy_bp'], dm['gold'] * 100, s=14, color=_TF_C['USDT'],
+                    alpha=0.6, edgecolors='none')
+    axes[0].axhline(0, lw=0.8, color=_TF_C['gray'])
+    axes[0].axvline(0, lw=0.8, color=_TF_C['gray'])
+    axes[0].set_xlabel('Δ 3-month T-bill yield (bp/month)')
+    axes[0].set_ylabel('Gold return (%, monthly)')
+
+    colors = [_TF_C['red'] if tn else '#8fa8c4' for tn in dq['triple_negative']]
+    axes[1].bar(range(len(dq)), dq['btc'] * 100, color=colors, width=0.85)
+    axes[1].axhline(0, lw=0.8, color=_TF_C['gray'])
+    ticks = [i for i, d in enumerate(dq.index) if d.quarter == 1]
+    axes[1].set_xticks(ticks)
+    axes[1].set_xticklabels([str(dq.index[i].year) for i in ticks], fontsize=7.8)
+    axes[1].set_xlim(-1, len(dq))
+    axes[1].set_ylabel('Bitcoin return (%, quarterly)')
+    axes[1].plot([], [], color=_TF_C['red'], lw=6,
+                 label='Triple-negative quarter\n(BTC & gold down, rates up)')
+    axes[1].legend(loc='lower left', fontsize=7.8)
+
+    fig.savefig(THESIS_FIG_DIR / 'fig_joint_stress_pub.png'); plt.close(fig)
+
+
+def _tf_fig_combined_stress_pub(sp, cs):
+    """(a) break-even combined BTC+gold shock, 2023-Q1..2025-Q4, y-inverted.
+       (b) unstressed reserve equity vs buffer after the 2022-Q2 replay,
+           all 14 quarters, zero line."""
+    q12 = _TF_QUARTERS[2:]  # 2023-Q1 onward (first BTC/gold disclosure)
+    fig, axes = plt.subplots(1, 2, figsize=(12.6, 4.3))
+
+    be = (sp.drop_duplicates('Quarter').set_index('Quarter')
+            ['Breakeven_Combined_pct'].reindex(q12).astype(float))
+    x0 = range(len(q12))
+    axes[0].plot(x0, be.values, marker='o', ms=4, lw=1.8, color=_TF_C['red'])
+    axes[0].set_ylabel('Break-even combined BTC+gold shock\n(|%|, buffer-exhausting)')
+    axes[0].invert_yaxis()
+    axes[0].set_xticks(list(x0))
+    axes[0].set_xticklabels([f"Q{q.split('-Q')[1]}\n{q[:4]}" for q in q12], fontsize=7.8)
+
+    rep = cs.drop_duplicates('Quarter').set_index('Quarter').reindex(_TF_QUARTERS)
+    x1 = range(14)
+    axes[1].plot(x1, rep['Reserve_Equity_bn'].astype(float), marker='o', ms=3.5,
+                 lw=1.6, color=_TF_C['USDT'], label='Reserve equity (unstressed)')
+    axes[1].plot(x1, rep['Replay_2022Q2_Buffer_after_bn'].astype(float), marker='s',
+                 ms=3.5, lw=1.6, color=_TF_C['red'],
+                 label='Buffer after 2022-Q2 replay\n(BTC −57.3%, gold −6.9%, +105bp)')
+    axes[1].axhline(0, lw=0.8, color=_TF_C['gray'])
+    axes[1].set_ylabel('$ billion')
+    _tf_qticks(axes[1], _TF_QUARTERS)
+    axes[1].legend(loc='upper left', fontsize=7.5)
+
+    fig.savefig(THESIS_FIG_DIR / 'fig_combined_stress_pub.png'); plt.close(fig)
+
+
+def _tf_fig_price_shock_appendix(cs, sp):
+    """(a) buffer after -20/-30/-40/-50% price shocks at +400bp, per quarter.
+       (b) latest-quarter buffer after BTC-only / gold-only / combined shocks,
+           per shock size."""
+    fig, axes = plt.subplots(1, 2, figsize=(12.6, 4.3))
+
+    x = range(14)
+    shock_colors = {20: '#f2c14e', 30: '#e8965a', 40: '#c1533f', 50: _TF_C['red']}
+    for s in sorted(cs['Price_Shock_pct'].unique()):
+        sub = (cs[(cs['Price_Shock_pct'] == s) & (cs['Rate_Shock_bp'] == 400)]
+                 .drop_duplicates('Quarter').set_index('Quarter').reindex(_TF_QUARTERS))
+        axes[0].plot(x, sub['Buffer_after_bn'].astype(float), marker='o', ms=3,
+                     lw=1.6, color=shock_colors.get(s, _TF_C['gray']),
+                     label=f'−{s}% price / +400bp')
+    axes[0].axhline(0, lw=0.8, color=_TF_C['gray'])
+    axes[0].set_ylabel('Buffer after combined shock ($bn)')
+    _tf_qticks(axes[0], _TF_QUARTERS)
+    axes[0].legend(loc='upper left', fontsize=7.5)
+
+    last = sp[sp['Quarter'] == _TF_QUARTERS[-1]].sort_values('Shock_pct')
+    xw = np.arange(len(last)); w = 0.25
+    axes[1].bar(xw - w, last['Buffer_after_BTC_bn'], w, color=_TF_C['USDC'],
+                label='After BTC-only')
+    axes[1].bar(xw, last['Buffer_after_Gold_bn'], w, color='#c1a24e',
+                label='After gold-only')
+    axes[1].bar(xw + w, last['Buffer_after_Combined_bn'], w, color=_TF_C['red'],
+                label='After combined')
+    axes[1].axhline(0, lw=0.8, color=_TF_C['gray'])
+    axes[1].set_xticks(list(xw))
+    axes[1].set_xticklabels([f"−{s}%" for s in last['Shock_pct']])
+    axes[1].set_ylabel(f'Buffer after shock, {_TF_QUARTERS[-1]} ($bn)')
+    axes[1].legend(loc='upper left', fontsize=7.8)
+
+    fig.savefig(THESIS_FIG_DIR / 'fig_price_shock_appendix.png'); plt.close(fig)
+
+
 def make_thesis_figures():
     """Section 9 entry point: regenerate the seven publication figures."""
     print('\n' + '=' * 78)
@@ -4059,6 +4166,13 @@ def make_thesis_figures():
 
     tb_series, _basis = load_long_bill_history()
 
+    # 2026-07-12: Ch6 figure additions — need the panel + the three Section 8
+    # compute functions that already produce this data (no recomputation).
+    panel = load_panel()
+    dm, dq, _replays, _jsum = compute_joint_stress(panel)
+    sp = compute_price_shock_panel(panel)
+    cs = compute_combined_stress_timeseries(panel)
+
     with plt.rc_context(_TF_STYLE):
         if cb is not None and mtm is not None and usdp_rwa is not None:
             _tf_fig_4_1(cb, mtm, usdp_rwa);  print('  Saved fig_4_1_rwa_density.png')
@@ -4080,6 +4194,11 @@ def make_thesis_figures():
             _tf_fig_6_3(share);              print('  Saved fig_6_3_tbill_share.png')
         if score is not None and schemes is not None:
             _tf_fig_7_1(score, schemes);     print('  Saved fig_7_1_classification.png')
+
+        # 2026-07-12: Ch6 figure additions
+        _tf_fig_joint_stress_pub(dm, dq);       print('  Saved fig_joint_stress_pub.png')
+        _tf_fig_combined_stress_pub(sp, cs);    print('  Saved fig_combined_stress_pub.png')
+        _tf_fig_price_shock_appendix(cs, sp);   print('  Saved fig_price_shock_appendix.png')
 
     print(f'  -> {THESIS_FIG_DIR}')
 

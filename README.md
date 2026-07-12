@@ -276,6 +276,9 @@ bank benchmark and combined stress (including `combined_stress_timeseries.csv`).
 | `fig_6_2_combined_stress.png` | §6.3.4 — sleeve vs buffer vs break-even ("scissors") |
 | `fig_6_3_tbill_share.png` | §6.2 — sector T-bill footprint |
 | `fig_7_1_classification.png` | §7.3.2 — classification spectrum + weighting schemes |
+| `fig_joint_stress_pub.png` *(added 2026-07-12)* | Ch. 6 — monthly gold-vs-rate scatter and BTC quarterly returns, triple-negative quarters highlighted |
+| `fig_combined_stress_pub.png` *(added 2026-07-12)* | Ch. 6 — break-even combined BTC+gold shock (2023-Q1–2025-Q4) and reserve equity vs. 2022-Q2-replay buffer |
+| `fig_price_shock_appendix.png` *(added 2026-07-12)* | Appendix A — buffer after −20/−30/−40/−50% price shocks at +400bp, all quarters; and 2025-Q4 buffer by shock leg (BTC-only / gold-only / combined) |
 
 ### Tables — CSV (Sections 1–7)
 
