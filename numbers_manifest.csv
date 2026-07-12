@@ -1,0 +1,39 @@
+metric,value,unit,source_file,source_column_or_cell,thesis_location,rounding_convention
+Classification score (USDP),25.0,score (0-100),classification_scorecard.csv,Score,"Chapter 7, Table 7.2",rounded to 1 decimal in source
+Classification score (USDC),15.9,score (0-100),classification_scorecard.csv,Score,"Chapter 7, Table 7.2",rounded to 1 decimal in source
+Classification score (USDT),54.7,score (0-100),classification_scorecard.csv,Score,"Chapter 7, Table 7.2",rounded to 1 decimal in source
+Monte Carlo: full ordinal claim intact,92.5,%,analysis.py (live computation — not persisted to any CSV),"compute_weight_sensitivity() -> mc_summary['ordinal_intact_pct'], n=20000, seed=0","Chapter 7, Figure 7.1 / narrative",rounded to 1 decimal in source
+Monte Carlo: USDT scores highest,92.5,%,analysis.py (live computation — not persisted to any CSV),"compute_weight_sensitivity() -> mc_summary['usdt_highest_pct'], n=20000, seed=0","Chapter 7, Figure 7.1 / narrative",rounded to 1 decimal in source
+Monte Carlo: USDC stays narrow-bank (<33),93.7,%,analysis.py (live computation — not persisted to any CSV),"compute_weight_sensitivity() -> mc_summary['usdc_narrowbank_pct'], n=20000, seed=0","Chapter 7, Figure 7.1 / narrative",rounded to 1 decimal in source
+Monte Carlo: USDP stays narrow-bank (<33),76.0,%,analysis.py (live computation — not persisted to any CSV),"compute_weight_sensitivity() -> mc_summary['usdp_narrowbank_pct'], n=20000, seed=0","Chapter 7, Figure 7.1 / narrative",rounded to 1 decimal in source
+Monte Carlo: USDT stays MMF-like (>=50),69.8,%,analysis.py (live computation — not persisted to any CSV),"compute_weight_sensitivity() -> mc_summary['usdt_mmf_pct'], n=20000, seed=0","Chapter 7, Figure 7.1 / narrative",rounded to 1 decimal in source
+"RW-equity ratio, Q4-2025 (USDC)",3.49,%,capital_bridge.csv,RW_Equity_Ratio_pct,"Chapter 4, Table 4.3 (Q4-2025 row)",rounded to 2 decimals in source
+"RW-equity ratio, Q4-2025 (USDT)",4.51,%,capital_bridge.csv,RW_Equity_Ratio_pct,"Chapter 4, Table 4.3 (Q4-2025 row)",rounded to 2 decimals in source
+"RW-equity ratio, Q4-2025 (USDP)",0.79,%,capital_bridge.csv,RW_Equity_Ratio_pct,"Chapter 4, Table 4.3 (Q4-2025 row)",rounded to 2 decimals in source
+"RW-equity ratio, 14-quarter mean (USDC)",6.2,%,capital_bridge_timeseries.csv,mean(RW_Equity_Ratio_pct) over 14 quarters,"Chapter 4, Table 4.5 / narrative (%.1f mean)","computed as simple mean of the 14 quarterly values, each already rounded to 2dp in source"
+"RW-equity ratio, 14-quarter mean (USDP)",11.5,%,capital_bridge_timeseries.csv,mean(RW_Equity_Ratio_pct) over 14 quarters,"Chapter 4, Table 4.5 / narrative (%.1f mean)","computed as simple mean of the 14 quarterly values, each already rounded to 2dp in source"
+"RW-equity ratio, 14-quarter mean (USDT)",6.6,%,capital_bridge_timeseries.csv,mean(RW_Equity_Ratio_pct) over 14 quarters,"Chapter 4, Table 4.5 / narrative (%.1f mean)","computed as simple mean of the 14 quarterly values, each already rounded to 2dp in source"
+"LCR @ 40% run, look-through, 14q mean (USDC)",206.0,%,lcr_timeseries.csv,mean(USDC_LCR_LT) at Outflow_pct=40 over 14 quarters,"Chapter 6, Table 6.3 / narrative",computed as simple mean; source values carry 3 decimals
+"LCR @ 40% run, look-through, 14q mean (USDT)",192.0,%,lcr_timeseries.csv,mean(USDT_LCR_LT) at Outflow_pct=40 over 14 quarters,"Chapter 6, Table 6.3 / narrative",computed as simple mean; source values carry 3 decimals
+"LCR @ 40% run, 14q mean (USDP)",96.0,%,lcr_timeseries.csv,mean(USDP_LCR) at Outflow_pct=40 over 14 quarters,"Chapter 6, Table 6.3 / narrative",computed as simple mean; source values carry 3 decimals
+"LCR @ 40% run, Q4-2022 fund-transition artifact (USDC)",59.1,%,lcr_timeseries.csv,"USDC_LCR_LT at Quarter=2022-Q4, Outflow_pct=40","Chapter 6, Figure 6.3 annotation / Table 6.2",rounded to 1 decimal from 3dp source value
+"MtM loss, mildest cell 30d/+100bp (USDC)",0.072,% of assets,mtm_loss_grid.csv,"MtM_Loss_pct_of_assets @ WAM_days=30, Shock_bp=100","Chapter 5, Table 5.2",rounded to 3 decimals in source
+"MtM loss, worst cell 180d/+400bp (USDC)",1.722,% of assets,mtm_loss_grid.csv,"MtM_Loss_pct_of_assets @ WAM_days=180, Shock_bp=400","Chapter 5, Table 5.2",rounded to 3 decimals in source
+"MtM loss, mildest cell 30d/+100bp (USDT)",0.063,% of assets,mtm_loss_grid.csv,"MtM_Loss_pct_of_assets @ WAM_days=30, Shock_bp=100","Chapter 5, Table 5.2",rounded to 3 decimals in source
+"MtM loss, worst cell 180d/+400bp (USDT)",1.505,% of assets,mtm_loss_grid.csv,"MtM_Loss_pct_of_assets @ WAM_days=180, Shock_bp=400","Chapter 5, Table 5.2",rounded to 3 decimals in source
+"MtM loss, mildest cell 30d/+100bp (USDP)",0.023,% of assets,mtm_loss_grid.csv,"MtM_Loss_pct_of_assets @ WAM_days=30, Shock_bp=100","Chapter 5, Table 5.2",rounded to 3 decimals in source
+"MtM loss, worst cell 180d/+400bp (USDP)",0.562,% of assets,mtm_loss_grid.csv,"MtM_Loss_pct_of_assets @ WAM_days=180, Shock_bp=400","Chapter 5, Table 5.2",rounded to 3 decimals in source
+Break-even combined BTC+gold shock (2023-Q1),-50.0,%,btc_gold_shock_panel.csv,Breakeven_Combined_pct (sign-flipped to match thesis convention),"Chapter 6, Table 6.3 / Figure 6.4",rounded to nearest integer percent in thesis text
+Break-even combined BTC+gold shock (2023-Q4),-86.0,%,btc_gold_shock_panel.csv,Breakeven_Combined_pct (sign-flipped to match thesis convention),"Chapter 6, Table 6.3 / Figure 6.4",rounded to nearest integer percent in thesis text
+Break-even combined BTC+gold shock (2024-Q4),-54.0,%,btc_gold_shock_panel.csv,Breakeven_Combined_pct (sign-flipped to match thesis convention),"Chapter 6, Table 6.3 / Figure 6.4",rounded to nearest integer percent in thesis text
+Break-even combined BTC+gold shock (2025-Q1),-39.0,%,btc_gold_shock_panel.csv,Breakeven_Combined_pct (sign-flipped to match thesis convention),"Chapter 6, Table 6.3 / Figure 6.4",rounded to nearest integer percent in thesis text
+Break-even combined BTC+gold shock (2025-Q2),-31.0,%,btc_gold_shock_panel.csv,Breakeven_Combined_pct (sign-flipped to match thesis convention),"Chapter 6, Table 6.3 / Figure 6.4",rounded to nearest integer percent in thesis text
+Break-even combined BTC+gold shock (2025-Q3),-30.0,%,btc_gold_shock_panel.csv,Breakeven_Combined_pct (sign-flipped to match thesis convention),"Chapter 6, Table 6.3 / Figure 6.4",rounded to nearest integer percent in thesis text
+Break-even combined BTC+gold shock (2025-Q4),-25.0,%,btc_gold_shock_panel.csv,Breakeven_Combined_pct (sign-flipped to match thesis convention),"Chapter 6, Table 6.3 / Figure 6.4",rounded to nearest integer percent in thesis text
+Q2-2022 replay residual buffer (2023-Q4),3.4,$bn,combined_stress_timeseries.csv,Replay_2022Q2_Buffer_after_bn,"Chapter 6, Table 6.3 narrative",rounded to 2 decimals in source
+Q2-2022 replay residual buffer (2025-Q4),0.01,$bn,combined_stress_timeseries.csv,Replay_2022Q2_Buffer_after_bn,"Chapter 6, Table 6.3 narrative",rounded to 2 decimals in source
+BTC+gold sleeve (2023-Q1),4.89,$bn,btc_gold_shock_panel.csv,BTC_Notional_bn + Gold_Notional_bn,"Chapter 6, Table 6.3","sum of two source columns, each rounded to 3 decimals; re-rounded to 2dp"
+BTC+gold sleeve (2025-Q4),25.88,$bn,btc_gold_shock_panel.csv,BTC_Notional_bn + Gold_Notional_bn,"Chapter 6, Table 6.3","sum of two source columns, each rounded to 3 decimals; re-rounded to 2dp"
+Celsius / loan-book impairment bound,0.06,%,rwa_table.csv + combined_stress_timeseries.csv,Replay_2022Q2_Buffer_after_bn[2025-Q4] / (USDT_RWA_SecLoans[2025-Q4]/1e9) * 100,"Chapter 6, Section 6.3.5","derived ratio, not a single source cell; thesis rounds to 2 decimals (0.06%)"
+"T-bill footprint, minimum share",1.2,%,stablecoin_tbill_share.csv,min(Share_pct),"Chapter 6, Section 6.2 narrative / Figure 6.1",rounded to 1 decimal
+"T-bill footprint, maximum share",2.3,%,stablecoin_tbill_share.csv,max(Share_pct),"Chapter 6, Section 6.2 narrative / Figure 6.1",rounded to 1 decimal
